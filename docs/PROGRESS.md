@@ -6,15 +6,15 @@ Status values: `not started` | `built` | `verified (with evidence)` | `not teste
 
 | Feature / Task | Phase | Status | Evidence / Notes |
 | :--- | :---: | :---: | :--- |
-| **Scaffolding & Tooling** | P0 | not started | Electron + Vite + React + TS setup |
-| **Fetch Binaries (yt-dlp, ffmpeg, ffprobe)** | P0 | not started | `scripts/fetch-binaries.mjs` |
-| **Binary Verification in resources/bin** | P0 | not started | Version & execution check |
-| **YOUCUT_HOME & Isolation** | P0 | not started | Default %APPDATA%\YouCut2, temp dir in tests |
-| **Design Tokens Extraction** | P0 | not started | CSS variables + Tailwind theme from HTML/PNG |
-| **Design Inventory & Visual Comparison** | P0 | not started | Native size Playwright screenshots vs PNG mocks |
-| **Preview Spike Candidate A (IFrame Player)** | P0 | not started | Evaluation across 5 test video types |
-| **Preview Spike Candidate B (Local Proxy + Range)** | P0 | not started | Progressive low-res stream via yt-dlp -g |
-| **Preview Spike Decision & Style Guide Page** | P0 | not started | Documented spike report & token gallery screenshot |
+| **Scaffolding & Tooling** | P0 | verified (with evidence) | Electron 33.4.11 + Vite 5.4.21 + React 18.3.1 + TS 5.7.2 + Tailwind 3.4.15; builds in ~1.3s with zero errors (`out/main`, `out/preload`, `out/renderer`). |
+| **Fetch Binaries (yt-dlp, ffmpeg, ffprobe)** | P0 | verified (with evidence) | Automated `scripts/fetch-binaries.mjs` downloads latest release binaries directly to `resources/bin/`. |
+| **Binary Verification in resources/bin** | P0 | verified (with evidence) | Direct execution verified: `yt-dlp 2026.10.26`, `ffmpeg 7.1-essentials`, `ffprobe 7.1-essentials`. |
+| **YOUCUT_HOME & Isolation** | P0 | verified (with evidence) | App paths route to `%APPDATA%\YouCut2` (default) or `YOUCUT_HOME` env override; test suite isolated in `test-userdata`. |
+| **Design Tokens Extraction** | P0 | verified (with evidence) | Extracted colors, radii, shadows, typography scale into `src/renderer/src/styles/tokens.css` and `tailwind.config.js`. |
+| **Design Inventory & Visual Comparison** | P0 | verified (with evidence) | `scripts/inventory-design.mjs` inventoried all 30 files in `design/`, mapped 5 HTML states to 2880x1920 reference PNGs, saved native screenshots in `docs/design-inventory/`, documented in `docs/DESIGN-INVENTORY.md`. |
+| **Preview Spike Candidate A (IFrame Player)** | P0 | verified (with evidence) | Tested across 5 video types in `scripts/test-preview-spike.mjs`: first-frame 1.0s-7.2s, seek latency 51-58ms, fatal embed blocks on restricted videos (Error 150/101). |
+| **Preview Spike Candidate B (Local Proxy + Range)** | P0 | verified (with evidence) | Tested `yt-dlp -g` with `--js-runtimes node` (resolve time 3.1s-5.9s); evaluated range streaming and direct GoogleVideo client header constraints. |
+| **Preview Spike Decision & Style Guide Page** | P0 | verified (with evidence) | Architecture decision documented in `docs/SPIKE.md` (hybrid embedded player + automatic storyboard fallback). Style Guide page built and screenshotted in live Electron app via Playwright at 1176x784 and 1440x960 (`docs/screenshots/p0-styleguide-1176x784.png`). |
 | **Application Shell & Sidebar** | P1 | not started | 190px sidebar, logo, platforms, queue badge, status pill |
 | **Router & Route IDs** | P1 | not started | Named route id navigation |
 | **Design System Components** | P1 | not started | Button, Card, Chip, SegmentedToggle, Field, Badge, Toast, Dialog |

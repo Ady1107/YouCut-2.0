@@ -1,0 +1,57 @@
+:root {
+  /* Surface & Background Colors */
+  --bg-app: #0B0C10;
+  --bg-sidebar: #0F1116;
+  --bg-card: #14161D;
+  --bg-surface: #1B1E27;
+  --bg-surface-hover: #242834;
+  --bg-surface-active: #2A2E3B;
+
+  /* Borders */
+  --border-default: #232733;
+  --border-subtle: #1E212B;
+  --border-strong: #2A2E3B;
+  --border-muted: #3A3F4E;
+  --border-gray: #6B7285;
+
+  /* Typography Colors */
+  --text-primary: #F3F4F7;
+  --text-muted: #9BA1B0;
+  --text-subtle: #C6CAD5;
+  --text-dark: #1A0805;
+
+  /* Accents & Platform Tinting */
+  --accent-primary: #FF5B4A;
+  --accent-hover: #FF4532;
+  --accent-tint: #2A1B19;
+  --accent-tint-text: #FF8C7E;
+
+  --accent-youtube: #FF5B4A;
+  --accent-youtube-tint: #2A1B19;
+  --accent-youtube-tint-text: #FF8C7E;
+
+  --accent-instagram: #E1306C;
+  --accent-instagram-tint: #2B1A26;
+  --accent-instagram-tint-text: #F28BB8;
+
+  --accent-facebook: #1877F2;
+  --accent-facebook-tint: #17233D;
+  --accent-facebook-tint-text: #8DB4FF;
+
+  /* Status Colors */
+  --status-success: #3DDC97;
+  --status-warning: #F5A623;
+  --status-error: #E5484D;
+
+  /* Timeline & Ruler */
+  --ticks-color: #4A5062;
+  --filmstrip-border: #0B0C10;
+
+  /* Border Radii */
+  --radius-sm: 8px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
+  --radius-pill: 999px;
+}

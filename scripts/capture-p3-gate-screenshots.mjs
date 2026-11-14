@@ -385,10 +385,17 @@ async function run() {
   await page.screenshot({ path: shotSettingsLight });
   console.log('  -> Saved:', shotSettingsLight);
 
-  // 8. YouTube view in Light mode
-  console.log('Navigating to YouTube route in Light mode...');
+  // 8. YouTube view in Light mode & Tab Persistence Check
+  console.log('Navigating to YouTube route in Light mode (Verifying work persistence)...');
   await page.click('button[data-route="youtube"]');
   await page.waitForTimeout(400);
+
+  // Verify that the loaded video is still present and was NOT lost across tab switches!
+  const videoTitleStillLoaded = await page.locator('text=B.Tech / MCA वालों के लिए').count();
+  console.log('  -> Video title still preserved after tab switching:', videoTitleStillLoaded > 0);
+  if (videoTitleStillLoaded === 0) {
+    throw new Error('FAILED: Video work was lost when switching tabs!');
+  }
 
   const shotYtLight = path.join(outDir, '07-youtube-light-mode.png');
   await page.screenshot({ path: shotYtLight });

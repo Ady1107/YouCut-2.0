@@ -60,9 +60,9 @@
 html[data-theme="light"],
 body.light {
   --bg-app: #F3F4F6;
-  --bg-sidebar: #E5E7EB;
+  --bg-sidebar: #FFFFFF;
   --bg-card: #FFFFFF;
-  --bg-surface: #F9FAFB;
+  --bg-surface: #F3F4F6;
   --bg-surface-hover: #E5E7EB;
   --bg-surface-active: #D1D5DB;
 
@@ -77,20 +77,90 @@ body.light {
   --text-subtle: #374151;
   --text-dark: #FFFFFF;
 
-  --accent-primary: #E03E2D;
-  --accent-hover: #C53022;
+  --accent-primary: #FF5B4A;
+  --accent-hover: #FF4532;
   --accent-tint: #FEE2E2;
   --accent-tint-text: #991B1B;
 
+  --accent-youtube: #FF5B4A;
   --accent-youtube-tint: #FEE2E2;
   --accent-youtube-tint-text: #991B1B;
 
+  --accent-instagram: #E1306C;
   --accent-instagram-tint: #FCE7F3;
   --accent-instagram-tint-text: #9D174D;
 
+  --accent-facebook: #1877F2;
   --accent-facebook-tint: #DBEAFE;
   --accent-facebook-tint-text: #1E40AF;
 
   --ticks-color: #9CA3AF;
   --filmstrip-border: #D1D5DB;
+}
+
+/* Light Mode Overrides for UI Elements */
+html[data-theme="light"] body {
+  background-color: #F3F4F6 !important;
+  color: #111827 !important;
+}
+
+html[data-theme="light"] main {
+  background-color: #F3F4F6 !important;
+}
+
+html[data-theme="light"] aside {
+  background-color: #FFFFFF !important;
+  border-color: #E5E7EB !important;
+}
+
+html[data-theme="light"] .bg-\[\#0B0C10\] {
+  background-color: #F3F4F6 !important;
+}
+
+html[data-theme="light"] .bg-\[\#0F1116\] {
+  background-color: #F9FAFB !important;
+}
+
+html[data-theme="light"] .bg-\[\#14161D\] {
+  background-color: #FFFFFF !important;
+}
+
+html[data-theme="light"] .bg-\[\#1B1E27\] {
+  background-color: #F3F4F6 !important;
+}
+
+html[data-theme="light"] .bg-\[\#12141A\] {
+  background-color: #E5E7EB !important;
+}
+
+html[data-theme="light"] .border-border,
+html[data-theme="light"] .border-border-strong,
+html[data-theme="light"] .border-border-subtle {
+  border-color: #E5E7EB !important;
+}
+
+html[data-theme="light"] .text-foreground {
+  color: #111827 !important;
+}
+
+html[data-theme="light"] .text-foreground-muted {
+  color: #6B7280 !important;
+}
+
+html[data-theme="light"] .text-foreground-subtle {
+  color: #374151 !important;
+}
+
+html[data-theme="light"] input,
+html[data-theme="light"] textarea {
+  color: #111827 !important;
+}
+
+html[data-theme="light"] input::placeholder {
+  color: #9CA3AF !important;
+}
+
+html[data-theme="light"] .shadow-lg,
+html[data-theme="light"] .shadow-xl {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05) !important;
 }

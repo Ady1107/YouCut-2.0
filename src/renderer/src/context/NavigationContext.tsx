@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { RouteId, RouteParams, NavigationContextType } from '../types/routes';
 import { Toast, ToastProps } from '../components/Toast';
 
@@ -14,6 +14,35 @@ export const NavigationProvider: React.FC<{ children: ReactNode }> = ({ children
   });
   const [toasts, setToasts] = useState<Array<{ id: string; message: string; type: 'info' | 'success' | 'error' }>>([]);
 
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.api?.getQueue) {
+      window.api.getQueue().then((items) => {
+        const active = items.filter((i) => i.status === 'queued' || i.status === 'downloading');
+        setQueueCount(active.length);
+      }).catch(() => {});
+    }
+
+    if (typeof window !== 'undefined' && window.api?.onQueueUpdate) {
+      const unsub = window.api.onQueueUpdate((items) => {
+        const active = items.filter((i) => i.status === 'queued' || i.status === 'downloading');
+        setQueueCount(active.length);
+        const downloading = items.find((i) => i.status === 'downloading');
+        if (downloading) {
+          setStatus({
+            state: 'downloading',
+            text: `Downloading (${downloading.progress}%)`
+          });
+        } else {
+          setStatus({
+            state: 'ready',
+            text: 'Ready to clip'
+          });
+        }
+      });
+      return unsub;
+    }
+  }, []);
+
   const navigate = (route: RouteId, newParams: RouteParams = {}) => {
     setCurrentRoute(route);
     setParams(newParams);
@@ -21,10 +50,14 @@ export const NavigationProvider: React.FC<{ children: ReactNode }> = ({ children
 
   const showToast = (message: string, type: 'info' | 'success' | 'error' = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
-    setToasts((prev) => [...prev, { id, message, type }]);
+    setToasts((prev) => {
+      // Keep at most 2 recent unique toasts to prevent UI clutter
+      const filtered = prev.filter((t) => t.message !== message).slice(-1);
+      return [...filtered, { id, message, type }];
+    });
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 4000);
+    }, 2500);
   };
 
   const removeToast = (id: string) => {

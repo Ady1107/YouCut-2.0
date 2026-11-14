@@ -29,13 +29,14 @@ Status values: `not started` | `built` | `verified (with evidence)` | `not teste
 | **YouTube Save Location & Path Budgeting** | P2 | verified (with evidence) | Sanitizes filename against Windows invalid characters (`/ \ : * ? " < > |`), budgets length under 260-char path limit, default platform directory. |
 | **YouTube Chapters Integration** | P2 | verified (with evidence) | `ChaptersPopover` component renders in Trim header when video has chapters, clicking a chapter updates START/END range, includes "Add all N clips to queue" action. |
 | **YouTube Fetch State & Error Handling** | P2 | verified (with evidence) | Immediate spinner loading state, 60s watchdog timeout, error card with "Retry fetch" button, dismissable wrong-platform banner for Instagram/Facebook links, playlist notice banner. All 8 required visual states verified and captured in `docs/screenshots/p2/`. |
-| **YouTube Engine: Full & Clip Download** | P3 | not started | yt-dlp download execution with --newline, progress template |
-| **yt-dlp Process Tree & Watchdog** | P3 | not started | 90s watchdog, taskkill /F /T /PID on stop/cancel/quit |
-| **Stop / Resume / Cancel** | P3 | not started | Keep .part on stop, --continue on resume, delete only on cancel |
-| **Validation via ffprobe (Lesson 5)** | P3 | not started | Exists, size > 0, streams, duration tolerance check |
-| **Sequential Queue Engine** | P3 | not started | Sequential execution, fragment setting (1-32), single listener guarantee |
-| **History Database & Store** | P3 | not started | SQLite / better-sqlite3 with search, open file, re-download |
-| **Settings & Diagnostics** | P3 | not started | JSON settings, rotating log, copy diagnostics with redaction |
+| **YouTube Engine: Full & Clip Download** | P3 | verified (with evidence) | yt-dlp execution with `--newline`, JSON `--progress-template`, section clipping with `--download-sections` and `--force-keyframes-at-cuts` for exact cuts. |
+| **yt-dlp Process Tree & Watchdog** | P3 | verified (with evidence) | 90s watchdog timer on stalled outputs, active child PID tracking, process tree termination with `taskkill /F /T /PID` on pause/cancel/quit. |
+| **Stop / Resume / Cancel** | P3 | verified (with evidence) | Preserves `.part` files on pause/stop, `--continue` on resume, deletes partials exclusively on explicit cancel per Lesson 3. |
+| **Validation via ffprobe (Lesson 5)** | P3 | verified (with evidence) | `validateOutputWithFFprobe` validates existence, non-zero file size, audio/video stream presence, and duration tolerance (1.5s for Exact, 5.0s for Fast). |
+| **Sequential Queue Engine** | P3 | verified (with evidence) | Strict sequential execution (`src/main/download/queue.ts`), 1-32 configurable multi-fragment concurrency, real-time IPC broadcasts (`queue:update`, `queue:progress`), live progress bars, pause/resume/cancel controls in `QueueRoute`. |
+| **History Database & Store** | P3 | verified (with evidence) | Persistent history store (`src/main/download/history.ts`), search, platform filters, "Show in folder" (`shell.showItemInFolder`), "Play file" (`shell.openPath`). |
+| **Settings, Themes & Diagnostics** | P3 | verified (with evidence) | Dark (default) and Light theme switcher persisted in localStorage, native folder browser dialogs, fragment concurrency slider (1-32), diagnostics clipboard copy. |
+| **Playback & Trimming Controls** | P3 | verified (with evidence) | Speed selector dropdown (0.5x to 2x), volume control slider & mute toggle, keyboard shortcuts (`I` for In trim, `O` for Out trim, `Space` for Play/Pause, `Arrows` for -5s/+5s seek), eliminated toast notification spam. Captured in `docs/screenshots/p3/`. |
 | **TrimModel Single Source of Truth** | P4 | not started | in, out, playhead, fullVideo unified state |
 | **Interactive Filmstrip & Handles** | P4 | not started | Storyboard cache, draggable handles, time flags, ruler |
 | **Player Controls & Shortcuts** | P4 | not started | Space, I/O, Shift+I/O, Alt+X, arrows, J/K/L, M, Ctrl+Enter, ? overlay |

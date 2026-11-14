@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigation } from '../context/NavigationContext';
+import { useTheme } from '../context/ThemeContext';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
 import { Field } from '../components/Field';
@@ -11,11 +12,14 @@ import {
   CheckIcon,
   YouTubeIcon,
   InstagramIcon,
-  FacebookIcon
+  FacebookIcon,
+  SunIcon,
+  MoonIcon
 } from '../components/Icons';
 
 export const SettingsRoute: React.FC = () => {
   const { showToast } = useNavigation();
+  const { theme, setTheme } = useTheme();
 
   // Settings state
   const [ytFolder, setYtFolder] = useState('C:\\Users\\User\\Downloads\\YouCut\\YouTube');
@@ -25,8 +29,37 @@ export const SettingsRoute: React.FC = () => {
   const [isCheckingUpdates, setIsCheckingUpdates] = useState(false);
   const [isCopied, setIsCopied] = useState(false);
 
-  const handleBrowse = (platform: string) => {
-    showToast(`Browse directory dialog will open in Phase 2 for ${platform}`, 'info');
+  // Load default directories from native system
+  React.useEffect(() => {
+    if (typeof window !== 'undefined' && window.api?.getDefaultDownloadDir) {
+      window.api.getDefaultDownloadDir('YouTube').then((dir) => { if (dir) setYtFolder(dir); }).catch(() => {});
+      window.api.getDefaultDownloadDir('Instagram').then((dir) => { if (dir) setIgFolder(dir); }).catch(() => {});
+      window.api.getDefaultDownloadDir('Facebook').then((dir) => { if (dir) setFbFolder(dir); }).catch(() => {});
+    }
+  }, []);
+
+  const handleBrowse = async (platform: string) => {
+    try {
+      if (window.api?.openDirectoryDialog) {
+        const cur = platform === 'YouTube' ? ytFolder : platform === 'Instagram' ? igFolder : fbFolder;
+        const selected = await window.api.openDirectoryDialog(cur);
+        if (selected) {
+          if (platform === 'YouTube') setYtFolder(selected);
+          else if (platform === 'Instagram') setIgFolder(selected);
+          else setFbFolder(selected);
+          showToast(`Updated ${platform} save directory: ${selected}`, 'success');
+        }
+      }
+    } catch {
+      showToast('Could not open folder picker', 'error');
+    }
+  };
+
+  const handleConcurrencyChange = (val: number) => {
+    setConcurrentFragments(val);
+    if (window.api?.setQueueConcurrency) {
+      window.api.setQueueConcurrency(val);
+    }
   };
 
   const handleCheckUpdates = () => {
@@ -76,9 +109,55 @@ export const SettingsRoute: React.FC = () => {
           Settings
         </h1>
         <p className="text-foreground-muted text-xs">
-          Manage platform download locations, engine fragment concurrency, binary engines, and system diagnostics.
+          Manage platform download locations, engine fragment concurrency, appearance theme, and system diagnostics.
         </p>
       </div>
+
+      {/* Section 0: Appearance & Theme */}
+      <Card className="p-6 bg-[#14161D] border-border-strong flex items-center justify-between">
+        <div className="flex flex-col gap-1">
+          <h2 className="font-display font-semibold text-base text-foreground">
+            Appearance & Theme
+          </h2>
+          <p className="text-foreground-muted text-xs">
+            Choose between dark mode (default) and high-contrast light mode.
+          </p>
+        </div>
+
+        <div className="flex items-center p-1 rounded-[12px] bg-[#0F1116] border border-border">
+          <button
+            type="button"
+            onClick={() => {
+              setTheme('dark');
+              showToast('Theme switched to Dark mode', 'info');
+            }}
+            className={`h-9 px-4 rounded-[10px] text-xs font-semibold flex items-center gap-2 transition-all ${
+              theme === 'dark'
+                ? 'bg-accent text-[#1A0805] shadow-sm'
+                : 'text-foreground-muted hover:text-foreground'
+            }`}
+          >
+            <MoonIcon size={14} />
+            <span>Dark</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setTheme('light');
+              showToast('Theme switched to Light mode', 'info');
+            }}
+            className={`h-9 px-4 rounded-[10px] text-xs font-semibold flex items-center gap-2 transition-all ${
+              theme === 'light'
+                ? 'bg-accent text-[#1A0805] shadow-sm'
+                : 'text-foreground-muted hover:text-foreground'
+            }`}
+          >
+            <SunIcon size={14} />
+            <span>Light</span>
+          </button>
+        </div>
+      </Card>
 
       {/* Section 1: Default Download Folders */}
       <Card className="p-6 bg-[#14161D] border-border-strong flex flex-col gap-5">
@@ -182,7 +261,7 @@ export const SettingsRoute: React.FC = () => {
             min="1"
             max="32"
             value={concurrentFragments}
-            onChange={(e) => setConcurrentFragments(Number(e.target.value))}
+            onChange={(e) => handleConcurrencyChange(Number(e.target.value))}
             className="w-full accent-accent h-2 bg-[#0F1116] rounded-lg cursor-pointer"
           />
 

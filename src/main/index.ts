@@ -1,8 +1,10 @@
-import { app, BrowserWindow, shell, ipcMain, clipboard, session } from 'electron';
+import { app, BrowserWindow, shell, ipcMain, clipboard, session, dialog } from 'electron';
 import { join } from 'path';
 import fs from 'fs';
 import { exec, execFile } from 'child_process';
-import { getYouCutHome, getBinaryPath } from './config/paths';
+import { getYouCutHome, getBinaryPath, getDefaultDownloadsDir } from './config/paths';
+import { queueManager } from './download/queue';
+import { historyStore } from './download/history';
 
 const isDev = !app.isPackaged;
 
@@ -96,18 +98,19 @@ function createWindow(): void {
     mainWindow?.show();
   });
 
-  // Strict CSP
+  // CSP allowing YouTube embeds, API, and video streaming
   mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     callback({
       responseHeaders: {
         ...details.responseHeaders,
         'Content-Security-Policy': [
-          "default-src 'self' 'unsafe-inline' http://localhost:* https://fonts.googleapis.com https://fonts.gstatic.com; " +
-          "script-src 'self' 'unsafe-inline' http://localhost:* https://www.youtube.com https://s.ytimg.com; " +
-          "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com; " +
-          "img-src 'self' data: https: http://localhost:*; " +
-          "media-src 'self' blob: http://localhost:* https:; " +
-          "font-src 'self' https://fonts.gstatic.com;"
+          "default-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* https: data: blob:; " +
+          "script-src 'self' 'unsafe-inline' 'unsafe-eval' http://localhost:* https://www.youtube.com https://s.ytimg.com https://www.youtube-nocookie.com https://*.google.com https://*.gstatic.com; " +
+          "frame-src 'self' https://www.youtube.com https://www.youtube-nocookie.com https://*.youtube.com; " +
+          "img-src 'self' data: https: blob: http://localhost:*; " +
+          "media-src 'self' blob: data: https: http://localhost:*; " +
+          "connect-src 'self' https: http://localhost:* wss://* ws://*; " +
+          "font-src 'self' data: https:;"
         ]
       }
     });
@@ -156,6 +159,53 @@ ipcMain.handle('clipboard:write', (_event, text: string) => {
     console.error('[Main] clipboard:write failed:', err);
     return false;
   }
+});
+
+// Queue IPC Handlers
+ipcMain.handle('queue:add', (_event, item) => queueManager.addItem(item));
+ipcMain.handle('queue:list', () => queueManager.getItems());
+ipcMain.handle('queue:pause', (_event, id: string) => queueManager.pauseItem(id));
+ipcMain.handle('queue:resume', (_event, id: string) => queueManager.resumeItem(id));
+ipcMain.handle('queue:cancel', (_event, id: string) => queueManager.cancelItem(id));
+ipcMain.handle('queue:clear-completed', () => queueManager.clearCompleted());
+ipcMain.handle('queue:set-concurrency', (_event, n: number) => queueManager.setConcurrentFragments(n));
+
+// History IPC Handlers
+ipcMain.handle('history:list', () => historyStore.getAll());
+ipcMain.handle('history:clear', () => historyStore.clear());
+ipcMain.handle('history:remove', (_event, id: string) => historyStore.remove(id));
+
+// Shell System Handlers
+ipcMain.handle('shell:open-folder', (_event, filePath: string) => {
+  if (filePath && fs.existsSync(filePath)) {
+    shell.showItemInFolder(filePath);
+    return true;
+  }
+  return false;
+});
+ipcMain.handle('shell:open-file', async (_event, filePath: string) => {
+  if (filePath && fs.existsSync(filePath)) {
+    await shell.openPath(filePath);
+    return true;
+  }
+  return false;
+});
+
+// Dialog and Downloads Handlers
+ipcMain.handle('dialog:open-directory', async (_event, defaultPath?: string) => {
+  if (!mainWindow) return null;
+  const res = await dialog.showOpenDialog(mainWindow, {
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: defaultPath || getDefaultDownloadsDir('YouTube')
+  });
+  if (!res.canceled && res.filePaths && res.filePaths.length > 0) {
+    return res.filePaths[0];
+  }
+  return null;
+});
+
+ipcMain.handle('downloads:get-default', (_event, platform: string) => {
+  return getDefaultDownloadsDir(platform || 'YouTube');
 });
 
 function formatDuration(seconds: number): string {

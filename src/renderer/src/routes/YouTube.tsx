@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigation } from '../context/NavigationContext';
 import { UrlBar } from '../components/UrlBar';
 import { Card } from '../components/Card';
@@ -17,6 +17,8 @@ import {
   Rewind5Icon,
   Forward5Icon,
   VolumeIcon,
+  VolumeXIcon,
+  GaugeIcon,
   FullscreenIcon,
   FilmIcon,
   FolderIcon,
@@ -42,6 +44,9 @@ export interface FetchedVideo {
 
 export const YouTubeRoute: React.FC = () => {
   const { params, navigate, setStatus, showToast } = useNavigation();
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const timelineTrackRef = useRef<HTMLDivElement>(null);
+  const isSelectionPlayingRef = useRef(false);
 
   // Mode and format states
   const [mediaType, setMediaType] = useState<'video' | 'audio'>('video');
@@ -51,8 +56,17 @@ export const YouTubeRoute: React.FC = () => {
   const [frameAccurate, setFrameAccurate] = useState(false);
   const [startTime, setStartTime] = useState('00:00:00');
   const [endTime, setEndTime] = useState('00:00:00');
+  const [playheadSec, setPlayheadSec] = useState<number>(0);
+  const [draggingTarget, setDraggingTarget] = useState<'start' | 'end' | 'playhead' | null>(null);
   const [fileName, setFileName] = useState('');
   const [saveFolder, setSaveFolder] = useState('C:\\Users\\User\\Downloads\\YouCut\\YouTube');
+
+  // Playback states
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState<number>(100);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
+  const [isSpeedMenuOpen, setIsSpeedMenuOpen] = useState(false);
 
   // Video data & fetch states
   const [currentUrl, setCurrentUrl] = useState(params.url || '');
@@ -66,7 +80,6 @@ export const YouTubeRoute: React.FC = () => {
 
   // Dropdown states
   const [isQualityDropdownOpen, setIsQualityDropdownOpen] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(false);
 
   const isVideoLoaded = Boolean(videoInfo);
   const totalDuration = videoInfo ? videoInfo.duration : 0;
@@ -74,7 +87,103 @@ export const YouTubeRoute: React.FC = () => {
   const endSec = hmsToSeconds(endTime) || totalDuration;
   const clipDuration = Math.max(0, endSec - startSec);
 
-  // Active cut mode per Lesson 4: Exact when <= 10m (600s) or frameAccurate is true
+  // Load real default save folder from native system
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.api?.getDefaultDownloadDir) {
+      window.api.getDefaultDownloadDir('YouTube').then((dir) => {
+        if (dir) setSaveFolder(dir);
+      }).catch(() => {});
+    }
+  }, []);
+
+  // Sync player postMessage events
+  useEffect(() => {
+    const handleWindowMessage = (e: MessageEvent) => {
+      try {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        if (data?.event === 'onStateChange') {
+          if (data.info === 1) {
+            setIsPlaying(true);
+          } else if (data.info === 2 || data.info === 0) {
+            setIsPlaying(false);
+          }
+        } else if (data?.event === 'infoDelivery' && data?.info?.currentTime !== undefined) {
+          const cur = Math.round(data.info.currentTime);
+          setPlayheadSec(cur);
+        }
+      } catch {}
+    };
+    window.addEventListener('message', handleWindowMessage);
+    return () => window.removeEventListener('message', handleWindowMessage);
+  }, []);
+
+  // Update playhead smoothly while playing
+  useEffect(() => {
+    let timer: any = null;
+    if (isPlaying) {
+      timer = setInterval(() => {
+        setPlayheadSec((prev) => {
+          const next = prev + 1;
+          if (isSelectionPlayingRef.current && next >= endSec) {
+            sendPlayerCommand('pauseVideo');
+            setIsPlaying(false);
+            isSelectionPlayingRef.current = false;
+            return endSec;
+          }
+          if (next >= totalDuration && totalDuration > 0) {
+            setIsPlaying(false);
+            return totalDuration;
+          }
+          return next;
+        });
+        sendPlayerCommand('getCurrentTime');
+      }, 1000);
+    }
+    return () => {
+      if (timer) clearInterval(timer);
+    };
+  }, [isPlaying, endSec, totalDuration]);
+
+  // Window drag listeners for Start, End handles and Playhead knob
+  useEffect(() => {
+    if (!draggingTarget) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!timelineTrackRef.current || totalDuration === 0) return;
+      const rect = timelineTrackRef.current.getBoundingClientRect();
+      const fraction = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const targetSec = Math.round(fraction * totalDuration);
+
+      if (draggingTarget === 'start') {
+        const newStart = Math.max(0, Math.min(targetSec, endSec - 1));
+        setStartTime(secondsToHms(newStart));
+        setPlayheadSec(newStart);
+        sendPlayerCommand('seekTo', [newStart, true]);
+      } else if (draggingTarget === 'end') {
+        const newEnd = Math.min(totalDuration, Math.max(targetSec, startSec + 1));
+        setEndTime(secondsToHms(newEnd));
+        setPlayheadSec(newEnd);
+        sendPlayerCommand('seekTo', [newEnd, true]);
+      } else if (draggingTarget === 'playhead') {
+        const newPlayhead = Math.max(0, Math.min(totalDuration, targetSec));
+        setPlayheadSec(newPlayhead);
+        sendPlayerCommand('seekTo', [newPlayhead, true]);
+      }
+    };
+
+    const handleMouseUp = () => {
+      setDraggingTarget(null);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [draggingTarget, totalDuration, startSec, endSec]);
+
+  // Active cut mode per Lesson 4
   const isCutExact = frameAccurate || (totalDuration > 0 && totalDuration <= 600);
   const cutModeText = isCutExact
     ? (frameAccurate ? 'Cut: Exact (Forced)' : 'Cut: Exact (Auto ≤10m)')
@@ -85,10 +194,8 @@ export const YouTubeRoute: React.FC = () => {
     if (!videoInfo || totalDuration === 0) return 0;
     const dur = isFullVideo ? totalDuration : clipDuration;
     if (mediaType === 'audio') {
-      // Audio ~ 2.5 MB per minute
       return Math.round((dur / 60) * 2.5 * 10) / 10;
     }
-    // Video ~ 18 MB per minute for 1080p
     return Math.round((dur / 60) * 18 * 10) / 10;
   };
 
@@ -107,7 +214,6 @@ export const YouTubeRoute: React.FC = () => {
     setCurrentUrl(url);
     const trimmed = url.trim();
 
-    // Check wrong platform
     if (trimmed.includes('instagram.com')) {
       setWrongPlatform('Instagram');
     } else if (trimmed.includes('facebook.com') || trimmed.includes('fb.watch')) {
@@ -116,7 +222,6 @@ export const YouTubeRoute: React.FC = () => {
       setWrongPlatform(null);
     }
 
-    // Check playlist
     if (trimmed.includes('list=') || trimmed.includes('playlist?')) {
       setShowPlaylistNotice(true);
     } else {
@@ -124,6 +229,7 @@ export const YouTubeRoute: React.FC = () => {
     }
   };
 
+  // Only fetches when user explicitly clicks Fetch info or enters URL
   const handleFetchInfo = async (urlToFetch?: string) => {
     const targetUrl = (urlToFetch || currentUrl).trim();
     if (!targetUrl) {
@@ -143,6 +249,9 @@ export const YouTubeRoute: React.FC = () => {
         setFileName(sanitizeFilename(data.title, 50));
         setStartTime('00:00:00');
         setEndTime(secondsToHms(data.duration));
+        setPlayheadSec(0);
+        setIsPlaying(false);
+        isSelectionPlayingRef.current = false;
         setSelectedResolution(
           data.availableResolutions && data.availableResolutions.length > 0
             ? `Best available · ${data.availableResolutions[0]}`
@@ -168,25 +277,196 @@ export const YouTubeRoute: React.FC = () => {
     }
   };
 
-  // Preset buttons handler
-  const handleApplyPreset = (presetName: string) => {
-    if (!videoInfo || totalDuration === 0) return;
+  // Send command to embedded iframe player via postMessage
+  const sendPlayerCommand = (func: string, args: any[] = []) => {
+    if (iframeRef.current && iframeRef.current.contentWindow) {
+      try {
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func, args }),
+          '*'
+        );
+      } catch (e) {
+        console.warn('postMessage to player failed:', e);
+      }
+    }
+  };
 
-    if (presetName === 'First 30s') {
+  // Player controls
+  const handleTogglePlay = () => {
+    if (!videoInfo) return;
+    if (!isPlaying) {
+      setIsPlaying(true);
+      sendPlayerCommand('playVideo');
+    } else {
+      setIsPlaying(false);
+      sendPlayerCommand('pauseVideo');
+    }
+  };
+
+  // Keyboard shortcuts: 'i' for IN (start), 'o' for OUT (end), Space for play/pause, Arrows for seek
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInputActive =
+        target?.tagName === 'INPUT' ||
+        target?.tagName === 'TEXTAREA' ||
+        target?.isContentEditable;
+
+      if (isInputActive) return;
+
+      const key = e.key.toLowerCase();
+
+      // 'i' key: In point (set START to playhead)
+      if (key === 'i') {
+        e.preventDefault();
+        if (!videoInfo || isFullVideo) return;
+        const newStart = Math.min(playheadSec, endSec);
+        setStartTime(secondsToHms(newStart));
+        return;
+      }
+
+      // 'o' key: Out point (set END to playhead)
+      if (key === 'o') {
+        e.preventDefault();
+        if (!videoInfo || isFullVideo) return;
+        const newEnd = Math.max(playheadSec, startSec);
+        setEndTime(secondsToHms(newEnd));
+        return;
+      }
+
+      // Spacebar: Play / Pause toggle
+      if (e.code === 'Space') {
+        e.preventDefault();
+        handleTogglePlay();
+        return;
+      }
+
+      // Left Arrow: Rewind 5s
+      if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        handleSeekRelative(-5);
+        return;
+      }
+
+      // Right Arrow: Forward 5s
+      if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        handleSeekRelative(5);
+        return;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [videoInfo, isFullVideo, playheadSec, startSec, endSec, isPlaying]);
+
+  const handleSeekRelative = (delta: number) => {
+    if (!videoInfo) return;
+    const target = Math.max(0, Math.min(totalDuration, playheadSec + delta));
+    setPlayheadSec(target);
+    sendPlayerCommand('seekTo', [target, true]);
+  };
+
+  const handleToggleMute = () => {
+    const nextMute = !isMuted;
+    setIsMuted(nextMute);
+    if (nextMute) {
+      sendPlayerCommand('mute');
+    } else {
+      sendPlayerCommand('unMute');
+      sendPlayerCommand('setVolume', [volume || 80]);
+    }
+  };
+
+  const handleVolumeChange = (val: number) => {
+    setVolume(val);
+    if (val === 0) {
+      setIsMuted(true);
+      sendPlayerCommand('mute');
+    } else {
+      if (isMuted) {
+        setIsMuted(false);
+        sendPlayerCommand('unMute');
+      }
+      sendPlayerCommand('setVolume', [val]);
+    }
+  };
+
+  const handleSetPlaybackSpeed = (spd: number) => {
+    setPlaybackSpeed(spd);
+    setIsSpeedMenuOpen(false);
+    sendPlayerCommand('setPlaybackRate', [spd]);
+  };
+
+  const handlePlaySelection = () => {
+    if (!videoInfo) return;
+    isSelectionPlayingRef.current = true;
+    setIsPlaying(true);
+    setPlayheadSec(startSec);
+    sendPlayerCommand('seekTo', [startSec, true]);
+    sendPlayerCommand('playVideo');
+  };
+
+  // Timeline track click
+  const handleTimelineClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!timelineTrackRef.current || totalDuration === 0 || isFullVideo) return;
+    const rect = timelineTrackRef.current.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const fraction = Math.max(0, Math.min(1, clickX / rect.width));
+    const targetSec = Math.round(fraction * totalDuration);
+    setPlayheadSec(targetSec);
+    sendPlayerCommand('seekTo', [targetSec, true]);
+  };
+
+  // Timecode direct inputs
+  const handleStartTimeInputChange = (val: string) => {
+    setStartTime(val);
+    const sec = hmsToSeconds(val);
+    if (!isNaN(sec) && sec >= 0 && sec < endSec) {
+      setPlayheadSec(sec);
+      sendPlayerCommand('seekTo', [sec, true]);
+    }
+  };
+
+  const handleStartTimeBlur = () => {
+    const sec = hmsToSeconds(startTime);
+    if (isNaN(sec) || sec < 0) {
       setStartTime('00:00:00');
-      setEndTime(secondsToHms(Math.min(30, totalDuration)));
-    } else if (presetName === 'First 60s') {
-      setStartTime('00:00:00');
-      setEndTime(secondsToHms(Math.min(60, totalDuration)));
-    } else if (presetName === 'Middle 50%') {
-      setStartTime(secondsToHms(totalDuration * 0.25));
-      setEndTime(secondsToHms(totalDuration * 0.75));
-    } else if (presetName === 'Last 30s') {
-      setStartTime(secondsToHms(Math.max(0, totalDuration - 30)));
+    } else if (sec >= endSec) {
+      setStartTime(secondsToHms(Math.max(0, endSec - 1)));
+    } else {
+      setStartTime(secondsToHms(sec));
+    }
+  };
+
+  const handleEndTimeInputChange = (val: string) => {
+    setEndTime(val);
+    const sec = hmsToSeconds(val);
+    if (!isNaN(sec) && sec > startSec && sec <= totalDuration) {
+      setPlayheadSec(sec);
+      sendPlayerCommand('seekTo', [sec, true]);
+    }
+  };
+
+  const handleEndTimeBlur = () => {
+    const sec = hmsToSeconds(endTime);
+    if (isNaN(sec) || sec > totalDuration) {
       setEndTime(secondsToHms(totalDuration));
-    } else if (presetName === 'Reset') {
-      setStartTime('00:00:00');
-      setEndTime(secondsToHms(totalDuration));
+    } else if (sec <= startSec) {
+      setEndTime(secondsToHms(Math.min(totalDuration, startSec + 1)));
+    } else {
+      setEndTime(secondsToHms(sec));
+    }
+  };
+
+  // "Use playhead" button handlers
+  const handleUsePlayhead = (target: 'start' | 'end') => {
+    if (target === 'start') {
+      const newStart = Math.min(playheadSec, endSec);
+      setStartTime(secondsToHms(newStart));
+    } else {
+      const newEnd = Math.max(playheadSec, startSec);
+      setEndTime(secondsToHms(newEnd));
     }
   };
 
@@ -194,41 +474,136 @@ export const YouTubeRoute: React.FC = () => {
   const handleAdjustTime = (target: 'start' | 'end', delta: number) => {
     if (target === 'start') {
       const cur = hmsToSeconds(startTime);
-      const next = Math.max(0, Math.min(cur + delta, totalDuration));
+      const next = Math.max(0, Math.min(cur + delta, endSec));
       setStartTime(secondsToHms(next));
+      setPlayheadSec(next);
+      sendPlayerCommand('seekTo', [next, true]);
     } else {
       const cur = hmsToSeconds(endTime);
-      const next = Math.max(0, Math.min(cur + delta, totalDuration));
+      const next = Math.max(startSec, Math.min(cur + delta, totalDuration));
       setEndTime(secondsToHms(next));
+      setPlayheadSec(next);
+      sendPlayerCommand('seekTo', [next, true]);
     }
   };
 
-  // Chapters handlers
+  // Preset buttons handler
+  const handleApplyPreset = (presetName: string) => {
+    if (!videoInfo || totalDuration === 0) return;
+
+    if (presetName === 'First 30s') {
+      setStartTime('00:00:00');
+      setEndTime(secondsToHms(Math.min(30, totalDuration)));
+      setPlayheadSec(0);
+    } else if (presetName === 'First 60s') {
+      setStartTime('00:00:00');
+      setEndTime(secondsToHms(Math.min(60, totalDuration)));
+      setPlayheadSec(0);
+    } else if (presetName === 'Middle 50%') {
+      const s = Math.round(totalDuration * 0.25);
+      const e = Math.round(totalDuration * 0.75);
+      setStartTime(secondsToHms(s));
+      setEndTime(secondsToHms(e));
+      setPlayheadSec(s);
+    } else if (presetName === 'Last 30s') {
+      const s = Math.max(0, totalDuration - 30);
+      setStartTime(secondsToHms(s));
+      setEndTime(secondsToHms(totalDuration));
+      setPlayheadSec(s);
+    } else if (presetName === 'Reset') {
+      setStartTime('00:00:00');
+      setEndTime(secondsToHms(totalDuration));
+      setPlayheadSec(0);
+    }
+  };
+
+  // Chapters handler
   const handleSelectChapter = (ch: Chapter) => {
     setStartTime(secondsToHms(ch.start_time));
     setEndTime(secondsToHms(ch.end_time));
+    setPlayheadSec(ch.start_time);
     setIsFullVideo(false);
-    showToast(`Trim set to chapter: "${ch.title}"`, 'info');
+    sendPlayerCommand('seekTo', [ch.start_time, true]);
   };
 
-  const handleAddAllChapters = (chapters: Chapter[]) => {
+  const handleAddAllChapters = async (chapters: Chapter[]) => {
+    if (!videoInfo) return;
+    for (const ch of chapters) {
+      const item = {
+        id: Math.random().toString(36).substring(2, 9),
+        title: `${videoInfo.title} - ${ch.title}`,
+        url: currentUrl,
+        platform: 'youtube' as const,
+        format: selectedFormat,
+        quality: selectedResolution,
+        startSec: ch.start_time,
+        endSec: ch.end_time,
+        isFullVideo: false,
+        frameAccurate,
+        saveFolder,
+        fileName: sanitizeFilename(`${videoInfo.title}_${ch.title}`, 60)
+      };
+      if (window.api && window.api.addToQueue) {
+        await window.api.addToQueue(item);
+      }
+    }
     showToast(`Added ${chapters.length} chapter clips to queue`, 'success');
   };
 
-  const handleBrowseFolder = () => {
-    showToast('Folder selector dialog will open native directory picker', 'info');
+  // Add to Queue handler
+  const handleAddToQueue = async () => {
+    if (!videoInfo) return;
+    const finalStart = isFullVideo ? 0 : startSec;
+    const finalEnd = isFullVideo ? totalDuration : endSec;
+
+    const item = {
+      id: Math.random().toString(36).substring(2, 9),
+      title: videoInfo.title,
+      url: currentUrl,
+      platform: 'youtube' as const,
+      format: selectedFormat,
+      quality: selectedResolution,
+      startSec: finalStart,
+      endSec: finalEnd,
+      isFullVideo,
+      frameAccurate,
+      saveFolder,
+      fileName
+    };
+
+    if (window.api && window.api.addToQueue) {
+      await window.api.addToQueue(item);
+      showToast(`Added "${fileName}" to queue`, 'success');
+    } else {
+      showToast('Queue API not available. Please restart the app.', 'error');
+    }
   };
 
-  // Auto-fetch if navigated with autoFetch
+  // Download Clip handler (adds to queue and navigates to queue view)
+  const handleDownloadNow = async () => {
+    await handleAddToQueue();
+    navigate('queue');
+  };
+
+  const handleBrowseFolder = async () => {
+    if (window.api && window.api.openDirectoryDialog) {
+      const selected = await window.api.openDirectoryDialog(saveFolder);
+      if (selected) {
+        setSaveFolder(selected);
+        showToast(`Save folder updated: ${selected}`, 'success');
+      }
+    } else {
+      showToast('Native directory selector is not available', 'error');
+    }
+  };
+
+  // Sync currentUrl from navigation parameters without auto-fetching
   useEffect(() => {
     if (params.url) {
       setCurrentUrl(params.url);
       handleUrlChange(params.url);
-      if (params.autoFetch) {
-        handleFetchInfo(params.url);
-      }
     }
-  }, [params.url, params.autoFetch]);
+  }, [params.url]);
 
   return (
     <div className="flex-1 flex flex-col gap-3.5 p-5 overflow-y-auto max-w-[1300px] mx-auto w-full box-border">
@@ -270,7 +645,7 @@ export const YouTubeRoute: React.FC = () => {
                 </span>
                 <span className="px-2.5 py-1 rounded-full bg-[#1B1E27] text-foreground-muted text-xs font-mono">
                   {videoInfo
-                    ? `${videoInfo.isVertical ? 'Vertical Short' : 'Landscape'} · ${videoInfo.durationFormatted}`
+                    ? `${videoInfo.isVertical ? 'Vertical Short' : '1080p'} · ${videoInfo.durationFormatted}`
                     : 'Waiting for video'}
                 </span>
               </div>
@@ -283,16 +658,14 @@ export const YouTubeRoute: React.FC = () => {
             {/* Viewport Frame */}
             <div className="relative aspect-video w-full rounded-[14px] bg-[#0A0B0E] border border-border flex flex-col items-center justify-center overflow-hidden">
               {isLoading ? (
-                /* Fetching loading state */
                 <div className="flex flex-col items-center gap-3 text-center p-6">
                   <div className="w-10 h-10 border-2 border-accent border-t-transparent rounded-full animate-spin" />
                   <div className="text-sm font-semibold text-foreground">Fetching video details...</div>
                   <div className="text-xs text-foreground-muted">Extracting resolutions, chapters, and audio streams</div>
                 </div>
               ) : fetchError ? (
-                /* Error state with Retry */
                 <div className="flex flex-col items-center gap-3 text-center p-6 max-w-md">
-                  <div className="w-10 h-10 rounded-full bg-[#2A1B19] text-accent flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-full bg-[#2A1B19] text-accent flex items-center justify-center font-bold">
                     !
                   </div>
                   <div className="text-sm font-semibold text-foreground">Could not load video</div>
@@ -308,35 +681,19 @@ export const YouTubeRoute: React.FC = () => {
                   </Button>
                 </div>
               ) : videoInfo ? (
-                /* Loaded state (Shorts/Landscape adaptive) */
-                <div className={`relative w-full h-full flex items-center justify-center bg-black ${videoInfo.isVertical ? 'py-1' : ''}`}>
-                  {videoInfo.thumbnail ? (
-                    <img
-                      src={videoInfo.thumbnail}
-                      alt={videoInfo.title}
-                      className={`h-full ${videoInfo.isVertical ? 'aspect-[9/16] object-cover rounded-[8px] shadow-2xl border border-white/10' : 'w-full object-cover'}`}
-                    />
-                  ) : null}
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-transparent to-black/30 pointer-events-none" />
-
-                  {/* Play overlay button */}
-                  <button
-                    type="button"
-                    onClick={() => setIsPlaying(!isPlaying)}
-                    className="absolute z-10 w-14 h-14 rounded-full bg-accent/90 text-[#1A0805] flex items-center justify-center hover:scale-110 active:scale-95 transition-transform shadow-xl"
-                  >
-                    {isPlaying ? <PauseIcon size={24} /> : <PlayIcon size={24} className="ml-1" />}
-                  </button>
-
-                  <div className="absolute bottom-3 left-4 right-4 flex items-center justify-between text-xs text-white z-10">
-                    <span className="font-semibold truncate max-w-[75%] drop-shadow">{videoInfo.title}</span>
-                    <span className="font-mono bg-black/75 px-2.5 py-0.5 rounded text-[11px] font-bold">
-                      {videoInfo.durationFormatted}
-                    </span>
-                  </div>
+                /* Interactive Player Frame */
+                <div className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden">
+                  <iframe
+                    ref={iframeRef}
+                    id="yt-player-iframe"
+                    src={`https://www.youtube.com/embed/${videoInfo.id}?enablejsapi=1&origin=${encodeURIComponent(typeof window !== 'undefined' ? window.location.origin : 'http://localhost')}&widgetid=1&rel=0&autoplay=0`}
+                    title={videoInfo.title}
+                    className={`w-full h-full border-0 ${videoInfo.isVertical ? 'max-w-[300px] mx-auto rounded-[8px]' : ''}`}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
                 </div>
               ) : (
-                /* Empty state */
                 <div className="flex flex-col items-center gap-2 text-center p-6 max-w-sm">
                   <div className="w-12 h-12 rounded-full bg-[#1B1E27] flex items-center justify-center text-foreground-muted">
                     <FilmIcon size={24} />
@@ -355,16 +712,16 @@ export const YouTubeRoute: React.FC = () => {
                 <button
                   type="button"
                   disabled={!isVideoLoaded}
-                  onClick={() => setIsPlaying(!isPlaying)}
+                  onClick={handleTogglePlay}
                   className="w-9 h-9 rounded-full bg-accent text-[#1A0805] flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 transition-all shadow-sm"
-                  aria-label="Play"
+                  aria-label="Play or Pause"
                 >
                   {isPlaying ? <PauseIcon size={16} /> : <PlayIcon size={16} className="ml-0.5" />}
                 </button>
                 <button
                   type="button"
                   disabled={!isVideoLoaded}
-                  onClick={() => handleAdjustTime('start', -5)}
+                  onClick={() => handleSeekRelative(-5)}
                   className="w-8 h-8 rounded-full bg-[#1B1E27] text-foreground-muted flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:text-foreground transition-all"
                   aria-label="Rewind 5 seconds"
                 >
@@ -373,14 +730,14 @@ export const YouTubeRoute: React.FC = () => {
                 <button
                   type="button"
                   disabled={!isVideoLoaded}
-                  onClick={() => handleAdjustTime('end', 5)}
+                  onClick={() => handleSeekRelative(5)}
                   className="w-8 h-8 rounded-full bg-[#1B1E27] text-foreground-muted flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:text-foreground transition-all"
                   aria-label="Forward 5 seconds"
                 >
                   <Forward5Icon size={16} />
                 </button>
                 <div className="text-xs font-mono pl-2 text-foreground-muted select-none">
-                  <span className="font-bold text-foreground">{secondsToMs(startSec)}</span> / {videoInfo ? secondsToMs(totalDuration) : '00:00'}
+                  <span className="font-bold text-foreground">{secondsToMs(playheadSec)}</span> / {videoInfo ? secondsToMs(totalDuration) : '00:00'}
                 </div>
               </div>
 
@@ -388,25 +745,87 @@ export const YouTubeRoute: React.FC = () => {
               <button
                 type="button"
                 disabled={!isVideoLoaded || isFullVideo}
+                onClick={handlePlaySelection}
                 className="h-8 px-4 rounded-full border border-accent text-accent bg-[#2A1B19]/30 text-xs font-semibold disabled:opacity-30 disabled:cursor-not-allowed hover:bg-accent hover:text-[#1A0805] transition-all"
               >
                 Play selection
               </button>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
+                {/* Speed Selector Dropdown */}
+                <div className="relative">
+                  <button
+                    type="button"
+                    disabled={!isVideoLoaded}
+                    onClick={() => setIsSpeedMenuOpen(!isSpeedMenuOpen)}
+                    className={`h-8 px-2.5 rounded-full bg-[#1B1E27] text-xs font-mono font-semibold flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed transition-all ${
+                      playbackSpeed !== 1 ? 'text-accent border border-accent/40 bg-accent/10' : 'text-foreground-muted hover:text-foreground'
+                    }`}
+                    title="Playback Speed"
+                  >
+                    <GaugeIcon size={14} />
+                    <span>{playbackSpeed}x</span>
+                  </button>
+
+                  {isSpeedMenuOpen && (
+                    <div className="absolute right-0 bottom-full mb-2 bg-[#14161D] border border-border-strong rounded-[10px] shadow-2xl p-1 flex flex-col gap-0.5 z-40 min-w-[95px]">
+                      {[0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((spd) => (
+                        <button
+                          key={spd}
+                          type="button"
+                          onClick={() => handleSetPlaybackSpeed(spd)}
+                          className={`w-full text-left px-2.5 py-1.5 text-xs font-mono rounded-[6px] transition-colors ${
+                            playbackSpeed === spd
+                              ? 'bg-accent text-[#1A0805] font-bold'
+                              : 'text-foreground-subtle hover:bg-[#1B1E27] hover:text-foreground'
+                          }`}
+                        >
+                          {spd}x {spd === 1 ? '(Normal)' : ''}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Volume Button & Slider */}
+                <div className="flex items-center gap-1.5 bg-[#1B1E27] px-2 py-1 rounded-full border border-border-subtle">
+                  <button
+                    type="button"
+                    disabled={!isVideoLoaded}
+                    onClick={handleToggleMute}
+                    className={`w-6 h-6 rounded-full flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all ${
+                      isMuted ? 'text-accent' : 'text-foreground-muted hover:text-foreground'
+                    }`}
+                    aria-label={isMuted ? 'Unmute' : 'Mute'}
+                    title={isMuted ? 'Unmute' : 'Mute'}
+                  >
+                    {isMuted ? <VolumeXIcon size={14} /> : <VolumeIcon size={14} />}
+                  </button>
+
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    disabled={!isVideoLoaded}
+                    value={isMuted ? 0 : volume}
+                    onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                    className="w-16 h-1.5 accent-accent bg-[#0A0B0E] rounded-full cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    title={`Volume: ${isMuted ? 0 : volume}%`}
+                  />
+                </div>
+
+                {/* Fullscreen Button */}
                 <button
                   type="button"
                   disabled={!isVideoLoaded}
-                  className="w-8 h-8 rounded-full bg-[#1B1E27] text-foreground-muted flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:text-foreground transition-all"
-                  aria-label="Mute"
-                >
-                  <VolumeIcon size={16} />
-                </button>
-                <button
-                  type="button"
-                  disabled={!isVideoLoaded}
+                  onClick={() => {
+                    if (iframeRef.current?.requestFullscreen) {
+                      iframeRef.current.requestFullscreen();
+                    }
+                  }}
                   className="w-8 h-8 rounded-full bg-[#1B1E27] text-foreground-muted flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed hover:text-foreground transition-all"
                   aria-label="Fullscreen"
+                  title="Fullscreen"
                 >
                   <FullscreenIcon size={16} />
                 </button>
@@ -419,16 +838,21 @@ export const YouTubeRoute: React.FC = () => {
             {/* Trim Header */}
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="font-display font-bold text-base text-foreground">Trim your clip</h2>
+                <div className="flex items-center gap-2.5">
+                  <h2 className="font-display font-bold text-base text-foreground">Trim your clip</h2>
+                  <span className="text-[11px] text-foreground-muted font-mono bg-[#1B1E27] px-2.5 py-0.5 rounded-full border border-border">
+                    <span className="text-accent font-bold">I</span> for In · <span className="text-accent font-bold">O</span> for Out · <span className="text-accent font-bold">Space</span> Play/Pause
+                  </span>
+                </div>
                 <p className={`text-xs mt-0.5 ${isFullVideo ? 'text-accent font-medium' : 'text-foreground-muted'}`}>
                   {isFullVideo
                     ? 'Clipping is off. The whole video will be downloaded.'
-                    : 'Drag the handles as you watch. Only that part is downloaded.'}
+                    : 'Drag the handles as you watch or press I / O to set In / Out trim points.'}
                 </p>
               </div>
 
               <div className="flex items-center gap-2.5">
-                {/* Chapters Popover Chip (Appears only when chapters exist) */}
+                {/* Chapters Popover */}
                 {videoInfo && videoInfo.chapters && videoInfo.chapters.length > 0 && (
                   <ChaptersPopover
                     chapters={videoInfo.chapters}
@@ -443,7 +867,7 @@ export const YouTubeRoute: React.FC = () => {
                   onChange={setIsFullVideo}
                 />
 
-                {/* Clip / Full video badge */}
+                {/* Duration badge */}
                 <span className="px-3 py-1 rounded-full bg-[#1B1E27] text-foreground-subtle text-xs font-mono font-medium">
                   {isFullVideo
                     ? `Full video · ${videoInfo ? videoInfo.durationFormatted : '00:00'}`
@@ -452,10 +876,14 @@ export const YouTubeRoute: React.FC = () => {
               </div>
             </div>
 
-            {/* Filmstrip / Timeline container */}
-            <div className={`relative h-20 rounded-[12px] bg-[#0A0B0E] border ${isFullVideo ? 'border-accent' : 'border-border'} flex flex-col justify-between p-2 select-none overflow-hidden transition-all`}>
+            {/* Filmstrip / Interactive Timeline */}
+            <div
+              ref={timelineTrackRef}
+              onClick={handleTimelineClick}
+              className={`relative h-20 rounded-[12px] bg-[#0A0B0E] border ${isFullVideo ? 'border-accent' : 'border-border'} flex flex-col justify-between p-2 select-none overflow-hidden transition-all cursor-pointer`}
+            >
               {/* Ruler ticks top */}
-              <div className="flex justify-between items-center text-[10px] font-mono text-foreground-muted opacity-60 px-2">
+              <div className="flex justify-between items-center text-[10px] font-mono text-foreground-muted opacity-60 px-2 pointer-events-none">
                 <span>00:00</span>
                 <span>{secondsToMs(totalDuration * 0.25)}</span>
                 <span>{secondsToMs(totalDuration * 0.5)}</span>
@@ -463,7 +891,7 @@ export const YouTubeRoute: React.FC = () => {
                 <span>{videoInfo ? secondsToMs(totalDuration) : '01:00'}</span>
               </div>
 
-              {/* Central Filmstrip track */}
+              {/* Central Filmstrip track with selection handles */}
               <div className="relative h-9 rounded-[8px] bg-[#12141A] border border-border-subtle flex items-center justify-center overflow-hidden">
                 {isFullVideo ? (
                   <div className="w-full h-full bg-accent/15 border-2 border-accent flex items-center justify-center rounded-[6px]">
@@ -471,18 +899,61 @@ export const YouTubeRoute: React.FC = () => {
                   </div>
                 ) : (
                   <div className="relative w-full h-full flex items-center justify-center">
-                    {/* Simulated selection range */}
+                    {/* Active Trim Selection Range */}
                     <div
-                      className="absolute top-0 bottom-0 bg-accent/20 border-y-2 border-accent"
+                      className="absolute top-0 bottom-0 bg-accent/25 border-y-2 border-accent z-10"
                       style={{
                         left: `${totalDuration > 0 ? (startSec / totalDuration) * 100 : 0}%`,
                         right: `${totalDuration > 0 ? Math.max(0, 100 - (endSec / totalDuration) * 100) : 0}%`
                       }}
                     >
-                      <div className="absolute -left-1 top-0 bottom-0 w-2 bg-accent rounded-l cursor-ew-resize" />
-                      <div className="absolute -right-1 top-0 bottom-0 w-2 bg-accent rounded-r cursor-ew-resize" />
+                      {/* Left Handle */}
+                      <div
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setDraggingTarget('start');
+                        }}
+                        className="absolute -left-1.5 top-0 bottom-0 w-3 bg-accent rounded-l cursor-ew-resize hover:scale-110 active:scale-110 transition-transform shadow-md z-30"
+                      >
+                        <div className="absolute -top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded bg-accent text-[#1A0805] text-[9px] font-mono font-bold whitespace-nowrap shadow select-none pointer-events-none">
+                          {secondsToMs(startSec)}
+                        </div>
+                      </div>
+
+                      {/* Right Handle */}
+                      <div
+                        onMouseDown={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setDraggingTarget('end');
+                        }}
+                        className="absolute -right-1.5 top-0 bottom-0 w-3 bg-accent rounded-r cursor-ew-resize hover:scale-110 active:scale-110 transition-transform shadow-md z-30"
+                      >
+                        <div className="absolute -top-5 left-1/2 -translate-x-1/2 px-1.5 py-0.5 rounded bg-accent text-[#1A0805] text-[9px] font-mono font-bold whitespace-nowrap shadow select-none pointer-events-none">
+                          {secondsToMs(endSec)}
+                        </div>
+                      </div>
                     </div>
-                    <span className="text-[11px] text-foreground-muted z-10">
+
+                    {/* Playhead indicator line */}
+                    {totalDuration > 0 && (
+                      <div
+                        className="absolute top-0 bottom-0 w-0.5 bg-white shadow-xl pointer-events-none z-20"
+                        style={{ left: `${(playheadSec / totalDuration) * 100}%` }}
+                      >
+                        <div
+                          onMouseDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setDraggingTarget('playhead');
+                          }}
+                          className="w-3.5 h-3.5 rounded-full bg-white -ml-1.5 -top-1.5 absolute shadow-md cursor-grab active:cursor-grabbing pointer-events-auto hover:scale-125 transition-transform"
+                        />
+                      </div>
+                    )}
+
+                    <span className="text-[11px] text-foreground-muted select-none">
                       {videoInfo ? `Clip selection: ${secondsToMs(clipDuration)}` : 'Timeline filmstrip will render here'}
                     </span>
                   </div>
@@ -490,7 +961,7 @@ export const YouTubeRoute: React.FC = () => {
               </div>
 
               {/* Bottom ruler ticks */}
-              <div className="flex justify-between items-center text-[9px] font-mono text-foreground-muted opacity-40 px-3">
+              <div className="flex justify-between items-center text-[9px] font-mono text-foreground-muted opacity-40 px-3 pointer-events-none">
                 {Array.from({ length: 15 }).map((_, i) => (
                   <div key={i} className="w-[1px] h-1.5 bg-foreground-muted" />
                 ))}
@@ -501,12 +972,18 @@ export const YouTubeRoute: React.FC = () => {
             <div className={`grid grid-cols-2 gap-3 transition-opacity ${isFullVideo ? 'opacity-40 pointer-events-none' : ''}`}>
               {/* START Card */}
               <div className="p-3.5 rounded-[12px] bg-[#0F1116] border border-border flex flex-col gap-2">
-                <div className="text-[11px] font-semibold text-foreground-muted tracking-wide">
-                  START
+                <div className="text-[11px] font-semibold text-foreground-muted tracking-wide flex items-center justify-between">
+                  <span>START</span>
+                  <span className="text-[10px] text-foreground-muted/70 font-mono">{secondsToMs(startSec)}</span>
                 </div>
-                <div className="font-mono text-2xl font-bold text-foreground">
-                  {isFullVideo ? '00:00:00' : startTime}
-                </div>
+                <input
+                  type="text"
+                  value={isFullVideo ? '00:00:00' : startTime}
+                  disabled={isFullVideo || !isVideoLoaded}
+                  onChange={(e) => handleStartTimeInputChange(e.target.value)}
+                  onBlur={handleStartTimeBlur}
+                  className="font-mono text-2xl font-bold text-foreground bg-transparent border-0 outline-none p-0 focus:text-accent disabled:opacity-40"
+                />
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     type="button"
@@ -527,22 +1004,29 @@ export const YouTubeRoute: React.FC = () => {
                   <button
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
-                    onClick={() => setStartTime('00:00:00')}
+                    onClick={() => handleUsePlayhead('start')}
                     className="flex-1 h-8 rounded-[8px] bg-[#2A1B19] text-[#FF8C7E] text-xs font-semibold hover:bg-accent hover:text-[#1A0805] transition-all disabled:opacity-40"
+                    title="Set start trim point to playhead (Shortcut: I)"
                   >
-                    Use playhead
+                    Use playhead (I)
                   </button>
                 </div>
               </div>
 
               {/* END Card */}
               <div className="p-3.5 rounded-[12px] bg-[#0F1116] border border-border flex flex-col gap-2">
-                <div className="text-[11px] font-semibold text-foreground-muted tracking-wide">
-                  END
+                <div className="text-[11px] font-semibold text-foreground-muted tracking-wide flex items-center justify-between">
+                  <span>END</span>
+                  <span className="text-[10px] text-foreground-muted/70 font-mono">{secondsToMs(endSec)}</span>
                 </div>
-                <div className="font-mono text-2xl font-bold text-foreground">
-                  {isFullVideo && videoInfo ? videoInfo.durationFormatted : endTime}
-                </div>
+                <input
+                  type="text"
+                  value={isFullVideo && videoInfo ? videoInfo.durationFormatted : endTime}
+                  disabled={isFullVideo || !isVideoLoaded}
+                  onChange={(e) => handleEndTimeInputChange(e.target.value)}
+                  onBlur={handleEndTimeBlur}
+                  className="font-mono text-2xl font-bold text-foreground bg-transparent border-0 outline-none p-0 focus:text-accent disabled:opacity-40"
+                />
                 <div className="flex items-center gap-2 pt-1">
                   <button
                     type="button"
@@ -563,10 +1047,11 @@ export const YouTubeRoute: React.FC = () => {
                   <button
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
-                    onClick={() => setEndTime(secondsToHms(totalDuration))}
+                    onClick={() => handleUsePlayhead('end')}
                     className="flex-1 h-8 rounded-[8px] bg-[#2A1B19] text-[#FF8C7E] text-xs font-semibold hover:bg-accent hover:text-[#1A0805] transition-all disabled:opacity-40"
+                    title="Set end trim point to playhead (Shortcut: O)"
                   >
-                    Use playhead
+                    Use playhead (O)
                   </button>
                 </div>
               </div>
@@ -799,7 +1284,7 @@ export const YouTubeRoute: React.FC = () => {
               variant="secondary"
               size="lg"
               disabled={!isVideoLoaded}
-              onClick={() => showToast(`Added "${fileName}" to queue`, 'success')}
+              onClick={handleAddToQueue}
               className="w-full flex items-center justify-center gap-2"
             >
               <QueueIcon size={18} />
@@ -810,7 +1295,7 @@ export const YouTubeRoute: React.FC = () => {
               variant="primary"
               size="lg"
               disabled={!isVideoLoaded}
-              onClick={() => showToast(`Starting download: ${fileName}.${selectedFormat.toLowerCase()}`, 'success')}
+              onClick={handleDownloadNow}
               className="w-full flex items-center justify-center gap-2 font-bold"
             >
               <DownloadIcon size={18} />

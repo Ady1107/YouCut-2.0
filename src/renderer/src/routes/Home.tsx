@@ -17,15 +17,14 @@ export const Home: React.FC = () => {
     }
 
     if (trimmed.includes('youtube.com') || trimmed.includes('youtu.be')) {
-      navigate('youtube', { url: trimmed, autoFetch: true });
+      navigate('youtube', { url: trimmed });
     } else if (trimmed.includes('instagram.com')) {
-      navigate('instagram', { url: trimmed, autoFetch: true });
+      navigate('instagram', { url: trimmed });
     } else if (trimmed.includes('facebook.com') || trimmed.includes('fb.watch')) {
-      navigate('facebook', { url: trimmed, autoFetch: true });
+      navigate('facebook', { url: trimmed });
     } else {
-      // Default to YouTube with toast notice
       showToast('URL detected, opening YouTube clipper', 'info');
-      navigate('youtube', { url: trimmed, autoFetch: true });
+      navigate('youtube', { url: trimmed });
     }
   };
 
@@ -35,7 +34,7 @@ export const Home: React.FC = () => {
       if (text && text.trim()) {
         const cleanText = text.trim();
         setInputUrl(cleanText);
-        handleRouteByUrl(cleanText);
+        showToast('URL pasted from clipboard', 'info');
       } else {
         showToast('Clipboard is empty or does not contain text', 'info');
       }

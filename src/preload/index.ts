@@ -21,6 +21,8 @@ export interface QueueItem {
   title: string;
   url: string;
   platform: 'youtube' | 'instagram' | 'facebook';
+  thumbnail?: string;
+  duration?: number;
   format: string;
   quality: string;
   startSec: number;

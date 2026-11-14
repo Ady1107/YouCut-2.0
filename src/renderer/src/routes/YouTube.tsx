@@ -568,12 +568,15 @@ export const YouTubeRoute: React.FC = () => {
       isFullVideo,
       frameAccurate,
       saveFolder,
-      fileName
+      fileName,
+      thumbnail: videoInfo.thumbnail,
+      duration: totalDuration
     };
 
     if (window.api && window.api.addToQueue) {
       await window.api.addToQueue(item);
-      showToast(`Added "${fileName}" to queue`, 'success');
+      // Immediately navigate to queue tab per user request (no toast popup)
+      navigate('queue');
     } else {
       showToast('Queue API not available. Please restart the app.', 'error');
     }
@@ -582,7 +585,6 @@ export const YouTubeRoute: React.FC = () => {
   // Download Clip handler (adds to queue and navigates to queue view)
   const handleDownloadNow = async () => {
     await handleAddToQueue();
-    navigate('queue');
   };
 
   const handleBrowseFolder = async () => {
@@ -989,7 +991,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleAdjustTime('start', -1)}
-                    className="flex-1 h-8 rounded-[8px] bg-[#1B1E27] text-foreground-muted text-xs font-medium hover:text-foreground disabled:opacity-40"
+                    className="flex-1 h-8 rounded-[8px] bg-surface border border-border text-foreground-muted text-xs font-medium hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
                   >
                     -1s
                   </button>
@@ -997,7 +999,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleAdjustTime('start', 1)}
-                    className="flex-1 h-8 rounded-[8px] bg-[#1B1E27] text-foreground-muted text-xs font-medium hover:text-foreground disabled:opacity-40"
+                    className="flex-1 h-8 rounded-[8px] bg-surface border border-border text-foreground-muted text-xs font-medium hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
                   >
                     +1s
                   </button>
@@ -1005,7 +1007,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleUsePlayhead('start')}
-                    className="flex-1 h-8 rounded-[8px] bg-[#2A1B19] text-[#FF8C7E] text-xs font-semibold hover:bg-accent hover:text-[#1A0805] transition-all disabled:opacity-40"
+                    className="flex-1 h-8 rounded-[8px] bg-[var(--accent-tint)] text-[var(--accent-tint-text)] border border-accent/20 text-xs font-semibold hover:bg-accent hover:text-[#1A0805] transition-all disabled:opacity-40"
                     title="Set start trim point to playhead (Shortcut: I)"
                   >
                     Use playhead (I)
@@ -1032,7 +1034,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleAdjustTime('end', -1)}
-                    className="flex-1 h-8 rounded-[8px] bg-[#1B1E27] text-foreground-muted text-xs font-medium hover:text-foreground disabled:opacity-40"
+                    className="flex-1 h-8 rounded-[8px] bg-surface border border-border text-foreground-muted text-xs font-medium hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
                   >
                     -1s
                   </button>
@@ -1040,7 +1042,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleAdjustTime('end', 1)}
-                    className="flex-1 h-8 rounded-[8px] bg-[#1B1E27] text-foreground-muted text-xs font-medium hover:text-foreground disabled:opacity-40"
+                    className="flex-1 h-8 rounded-[8px] bg-surface border border-border text-foreground-muted text-xs font-medium hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
                   >
                     +1s
                   </button>
@@ -1048,7 +1050,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleUsePlayhead('end')}
-                    className="flex-1 h-8 rounded-[8px] bg-[#2A1B19] text-[#FF8C7E] text-xs font-semibold hover:bg-accent hover:text-[#1A0805] transition-all disabled:opacity-40"
+                    className="flex-1 h-8 rounded-[8px] bg-[var(--accent-tint)] text-[var(--accent-tint-text)] border border-accent/20 text-xs font-semibold hover:bg-accent hover:text-[#1A0805] transition-all disabled:opacity-40"
                     title="Set end trim point to playhead (Shortcut: O)"
                   >
                     Use playhead (O)
@@ -1067,7 +1069,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleApplyPreset(preset)}
-                    className="h-7 px-2.5 rounded-[8px] bg-[#1B1E27] border border-border text-[11px] text-foreground-muted font-medium hover:text-foreground hover:border-border-muted transition-all select-none disabled:opacity-40"
+                    className="h-7 px-2.5 rounded-[8px] bg-surface border border-border text-[11px] text-foreground-muted font-medium hover:text-foreground hover:bg-surface-hover hover:border-border-muted transition-all select-none disabled:opacity-40"
                   >
                     {preset}
                   </button>

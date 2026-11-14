@@ -130,7 +130,60 @@ html[data-theme="light"] .bg-\[\#1B1E27\] {
 }
 
 html[data-theme="light"] .bg-\[\#12141A\] {
-  background-color: #E5E7EB !important;
+  background-color: #EEF0F4 !important;
+}
+
+html[data-theme="light"] .bg-\[\#0A0B0E\] {
+  background-color: #F8F9FA !important;
+  border-color: #E2E8F0 !important;
+}
+
+html[data-theme="light"] .bg-\[\#2A1B19\] {
+  background-color: #FEE2E2 !important;
+}
+
+html[data-theme="light"] .text-\[\#FF8C7E\] {
+  color: #DC2626 !important;
+}
+
+html[data-theme="light"] .bg-\[\#2B1A26\] {
+  background-color: #FCE7F3 !important;
+}
+
+html[data-theme="light"] .text-\[\#F28BB8\] {
+  color: #BE185D !important;
+}
+
+html[data-theme="light"] .bg-\[\#17233D\] {
+  background-color: #DBEAFE !important;
+}
+
+html[data-theme="light"] .text-\[\#8DB4FF\] {
+  color: #1D4ED8 !important;
+}
+
+html[data-theme="light"] .bg-\[\#182A20\] {
+  background-color: #DCFCE7 !important;
+}
+
+html[data-theme="light"] .text-\[\#3DDC97\] {
+  color: #15803D !important;
+}
+
+html[data-theme="light"] .bg-\[\#2A2318\] {
+  background-color: #FEF3C7 !important;
+}
+
+html[data-theme="light"] .text-\[\#F5A623\] {
+  color: #B45309 !important;
+}
+
+html[data-theme="light"] .bg-\[\#2A1819\] {
+  background-color: #FEE2E2 !important;
+}
+
+html[data-theme="light"] .text-\[\#E5484D\] {
+  color: #B91C1C !important;
 }
 
 html[data-theme="light"] .border-border,

@@ -12,6 +12,8 @@ export interface QueueItem {
   title: string;
   url: string;
   platform: 'youtube' | 'instagram' | 'facebook';
+  thumbnail?: string;
+  duration?: number;
   format: string; // 'MP4' | 'MOV' | 'GIF' | 'MP3' | 'M4A' | 'WAV'
   quality: string;
   startSec: number;
@@ -51,6 +53,7 @@ class QueueManager {
   public addItem(item: Omit<QueueItem, 'progress' | 'downloadedBytes' | 'totalBytes' | 'speed' | 'eta' | 'addedAt'>): QueueItem {
     const fullItem: QueueItem = {
       ...item,
+      status: item.status || 'queued',
       progress: 0,
       downloadedBytes: 0,
       totalBytes: 0,
@@ -210,10 +213,15 @@ class QueueManager {
     const outputFilePath = path.join(item.saveFolder, `${item.fileName}.${ext}`);
     item.finalPath = outputFilePath;
 
+    // Resolve FFmpeg directory so yt-dlp finds ffmpeg & ffprobe on Windows
+    const ffmpegPath = getBinaryPath('ffmpeg');
+    const binDir = path.dirname(ffmpegPath);
+
     // Build yt-dlp arguments per Lessons 1, 4, 7
     const args: string[] = [
       '--newline',
       '--no-playlist',
+      '--ffmpeg-location', binDir,
       '--js-runtimes', 'node',
       '--concurrent-fragments', this.concurrentFragments.toString(),
       '--continue',

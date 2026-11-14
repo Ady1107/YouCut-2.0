@@ -1,0 +1,49 @@
+[
+  {
+    "type": "Normal Video with Chapters",
+    "url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+    "success": true,
+    "elapsedMs": 4806,
+    "id": "aqz-KE-bpKQ",
+    "title": "Big Buck Bunny 60fps 4K - Official Blender Foundation Short Film",
+    "uploader": "Blender",
+    "duration": 635,
+    "width": 3840,
+    "height": 2160,
+    "isVertical": false,
+    "chaptersCount": 0,
+    "topResolutions": [
+      "2160p",
+      "1440p",
+      "1080p",
+      "720p"
+    ]
+  },
+  {
+    "type": "Vertical Short Format",
+    "url": "https://www.youtube.com/shorts/kJQP7kiw5Fk",
+    "success": true,
+    "elapsedMs": 5365,
+    "id": "kJQP7kiw5Fk",
+    "title": "Luis Fonsi - Despacito ft. Daddy Yankee",
+    "uploader": "Luis Fonsi",
+    "duration": 282,
+    "width": 1920,
+    "height": 1080,
+    "isVertical": true,
+    "chaptersCount": 0,
+    "topResolutions": [
+      "1080p",
+      "720p",
+      "608p",
+      "480p"
+    ]
+  },
+  {
+    "type": "Invalid URL (Error Handling)",
+    "url": "https://www.youtube.com/watch?v=nonexistent_invalid_vid_xyz123",
+    "success": false,
+    "elapsedMs": 2557,
+    "error": "ERROR: [youtube] nonexistent: This video is unavailable"
+  }
+]

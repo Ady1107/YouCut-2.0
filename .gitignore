@@ -22,6 +22,8 @@ cookies*.txt
 
 # User data
 user-data/
+test-userdata/
+test-userdata*/
 *.log
 npm-debug.log*
 yarn-debug.log*

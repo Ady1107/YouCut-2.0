@@ -1,10 +1,14 @@
 import React from 'react';
-import { StyleGuide } from './routes/StyleGuide';
+import { NavigationProvider } from './context/NavigationContext';
+import { AppShell } from './components/AppShell';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 export const App: React.FC = () => {
   return (
-    <div className="w-screen h-screen overflow-hidden bg-background">
-      <StyleGuide />
-    </div>
+    <ErrorBoundary>
+      <NavigationProvider>
+        <AppShell />
+      </NavigationProvider>
+    </ErrorBoundary>
   );
 };

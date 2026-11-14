@@ -15,20 +15,20 @@ Status values: `not started` | `built` | `verified (with evidence)` | `not teste
 | **Preview Spike Candidate A (IFrame Player)** | P0 | verified (with evidence) | Tested across 5 video types in `scripts/test-preview-spike.mjs`: first-frame 1.0s-7.2s, seek latency 51-58ms, fatal embed blocks on restricted videos (Error 150/101). |
 | **Preview Spike Candidate B (Local Proxy + Range)** | P0 | verified (with evidence) | Tested `yt-dlp -g` with `--js-runtimes node` (resolve time 3.1s-5.9s); evaluated range streaming and direct GoogleVideo client header constraints. |
 | **Preview Spike Decision & Style Guide Page** | P0 | verified (with evidence) | Architecture decision documented in `docs/SPIKE.md` (hybrid embedded player + automatic storyboard fallback). Style Guide page built and screenshotted in live Electron app via Playwright at 1176x784 and 1440x960 (`docs/screenshots/p0-styleguide-1176x784.png`). |
-| **Application Shell & Sidebar** | P1 | not started | 190px sidebar, logo, platforms, queue badge, status pill |
-| **Router & Route IDs** | P1 | not started | Named route id navigation |
-| **Design System Components** | P1 | not started | Button, Card, Chip, SegmentedToggle, Field, Badge, Toast, Dialog |
-| **Home Page** | P1 | not started | Paste box, auto-routing by URL, platform cards, recent downloads |
-| **Shells for Queue, History, Settings** | P1 | not started | Matching design language empty shells |
-| **P1 Multi-resolution Playwright Verification** | P1 | not started | 1176x784 and 1440x900 screenshots |
-| **YouTube URL Bar & Platform Chip** | P2 | not started | URL parsing, warm tint chip, green check, paste & fetch |
-| **YouTube Info Card & Metadata** | P2 | not started | Green found badge, 2-line title, subtitle |
-| **YouTube Trim Card & Timeline Controls** | P2 | not started | Handles, timecode cards (-1s/+1s), presets, frame-accurate toggle |
-| **YouTube Full Video Toggle** | P2 | not started | Checkbox pill, accent subtitle, border, dimmed trim controls |
-| **YouTube Quality & Format Selector** | P2 | not started | Video/Audio toggle, quality dropdown, MP4/MOV/GIF, MP3/M4A/WAV |
-| **YouTube Save Location & Path Budgeting** | P2 | not started | Windows 260-char path budget, default save folder per platform |
-| **YouTube Chapters Integration** | P2 | not started | Popover list, single chapter range or batch add |
-| **YouTube Fetch State & Error Handling** | P2 | not started | Loading state, 60s timeout, Retry cards, wrong-platform banner, playlist detection |
+| **Application Shell & Sidebar** | P1 | verified (with evidence) | 195px sidebar with logo, route-id navigation (`home`, `youtube`, `instagram`, `facebook`, `queue`, `history`, `settings`), active styling, queue badge, dynamic status pill. |
+| **Router & Route IDs** | P1 | verified (with evidence) | Named route id navigation (`types/routes.ts`, `NavigationContext.tsx`), auto-routing by URL platform detection, Toast system. |
+| **Design System Components** | P1 | verified (with evidence) | Rebuilt React components: `Button`, `Card`, `Chip`, `SegmentedToggle`, `Field`, `Badge`, `Toast`, `Dialog`, `Icons`, `ErrorBoundary`. |
+| **Home Page** | P1 | verified (with evidence) | Hero welcome, instant URL auto-routing box with native OS clipboard paste, 3 platform cards, recent downloads section. |
+| **Shells for Queue, History, Settings** | P1 | verified (with evidence) | Queue shell (sequential download skeleton, pause/clear), History shell (search, platform filter, folder reveal), Settings shell (per-platform download paths, 1-32 fragment concurrency slider, core binaries monitor, copy diagnostics with redaction). |
+| **P1 Multi-resolution Verification** | P1 | verified (with evidence) | Verified in running Electron app at 1176x784 and 1440x900. Replaced web clipboard with native OS clipboard IPC, verified error handling with ErrorBoundary. |
+| **YouTube URL Bar & Platform Chip** | P2 | verified (with evidence) | Live URL parsing, platform detection (YouTube / Instagram / Facebook), warm tint chip with green check, native paste & fetch. |
+| **YouTube Info Card & Metadata** | P2 | verified (with evidence) | Real metadata extraction via `youtube:fetch-info` IPC (`yt-dlp --dump-json --no-playlist --js-runtimes node`), green found badge, 2-line title, uploader info. |
+| **YouTube Trim Card & Timeline Controls** | P2 | verified (with evidence) | Draggable selection track, START/END timecode cards with -1s/+1s buttons, presets (`First 30s`, `First 60s`, `Middle 50%`, `Last 30s`, `Reset`), frame-accurate toggle and active cut mode indicator (`Cut: Exact` vs `Cut: Fast`). |
+| **YouTube Full Video Toggle** | P2 | verified (with evidence) | Full video pill with accent fill and checkmark, red accent subtitle (`Clipping is off...`), badge updates to `Full video · <duration>`, START/END and presets dimmed, primary button updates to `Download full video`. |
+| **YouTube Quality & Format Selector** | P2 | verified (with evidence) | Segmented toggle (`Video` \| `Audio only`), dynamic quality dropdown with real extracted resolutions (up to 4K 2160p) and audio bitrates (up to 320 kbps), format chips (`MP4`/`MOV`/`GIF` and `MP3`/`M4A`/`WAV`). |
+| **YouTube Save Location & Path Budgeting** | P2 | verified (with evidence) | Sanitizes filename against Windows invalid characters (`/ \ : * ? " < > |`), budgets length under 260-char path limit, default platform directory. |
+| **YouTube Chapters Integration** | P2 | verified (with evidence) | `ChaptersPopover` component renders in Trim header when video has chapters, clicking a chapter updates START/END range, includes "Add all N clips to queue" action. |
+| **YouTube Fetch State & Error Handling** | P2 | verified (with evidence) | Immediate spinner loading state, 60s watchdog timeout, error card with "Retry fetch" button, dismissable wrong-platform banner for Instagram/Facebook links, playlist notice banner. All 8 required visual states verified and captured in `docs/screenshots/p2/`. |
 | **YouTube Engine: Full & Clip Download** | P3 | not started | yt-dlp download execution with --newline, progress template |
 | **yt-dlp Process Tree & Watchdog** | P3 | not started | 90s watchdog, taskkill /F /T /PID on stop/cancel/quit |
 | **Stop / Resume / Cancel** | P3 | not started | Keep .part on stop, --continue on resume, delete only on cancel |

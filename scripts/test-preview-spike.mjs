@@ -260,7 +260,7 @@ async function runSpike() {
     try {
       console.log('  Testing Candidate A (YouTube IFrame)...');
       await page.goto(`http://localhost:9999/iframe-test?v=${item.id}`, { waitUntil: 'domcontentloaded' });
-      await page.waitForFunction(() => window.firstFrameTime !== null || window.playerError !== null, { timeout: 10000 }).catch(() => {});
+      await page.waitForFunction(() => window.firstFrameTime !== null || window.playerError !== null, { timeout: 10000 }).catch(() => { });
       const iframeState = await page.evaluate(() => ({
         ready: window.playerReady,
         error: window.playerError,
@@ -293,7 +293,7 @@ async function runSpike() {
       activeStreamUrls.set(item.id, streamInfo.streamUrl);
       try {
         await page.goto(`http://localhost:9999/video-test?v=${item.id}`, { waitUntil: 'domcontentloaded' });
-        await page.waitForFunction(() => window.firstFrameTime !== null || window.videoError !== null, { timeout: 10000 }).catch(() => {});
+        await page.waitForFunction(() => window.firstFrameTime !== null || window.videoError !== null, { timeout: 10000 }).catch(() => { });
         const vidState = await page.evaluate(() => ({
           firstFrameTime: window.firstFrameTime,
           error: window.videoError

@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { BrowserWindow, Notification } from 'electron';
 import { getBinaryPath, getYouCutHome } from '../config/paths';
+import { settingsManager } from '../config/settings';
 import { validateOutputWithFFprobe } from './validator';
 import { historyStore } from './history';
 import { killProcessTree, registerChildPid, unregisterChildPid } from '../index';
@@ -436,8 +437,9 @@ class QueueManager {
       return;
     }
 
-    const backoffs = [60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000];
-    const duration = backoffs[this.cooldownAttempt - 1] || 60 * 1000;
+    // Graduated gentle backoffs (30s -> 60s -> 3m) to prevent IP throttling without frustrating users
+    const backoffs = [30 * 1000, 60 * 1000, 180 * 1000];
+    const duration = backoffs[this.cooldownAttempt - 1] || 30 * 1000;
     this.cooldownUntil = Date.now() + duration;
     this.cooldownReason = reason || 'Rate limited by platform';
 
@@ -454,6 +456,7 @@ class QueueManager {
     this.cooldownTimer = null;
     this.cooldownUntil = null;
     this.cooldownReason = null;
+    this.cooldownAttempt = 0;
     this.broadcastState();
     this.triggerNext();
   }
@@ -573,21 +576,29 @@ class QueueManager {
     const binDir = path.dirname(ffmpegPath);
 
     // yt-dlp arguments per Part G (Deno runtime), Part D3 (gentle sleep for groups)
+    const settings = settingsManager.getSettings();
     const args: string[] = [
       '--newline',
       '--no-playlist',
       '--no-mtime',
       '--ffmpeg-location', binDir,
       '--js-runtimes', `deno:${denoPath}`,
+      '--user-agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       '--concurrent-fragments', this.concurrentFragments.toString(),
       '--continue',
       '--progress-template',
       'download:progress:{"percent":"%(progress._percent_str)s","downloaded":"%(progress.downloaded_bytes)s","total":"%(progress.total_bytes)s","speed":"%(progress._speed_str)s","eta":"%(progress._eta_str)s"}'
     ];
 
-    // Gentle batching for playlists
+    if (settings.cookies?.file && fs.existsSync(settings.cookies.file)) {
+      args.push('--cookies', settings.cookies.file);
+    } else if (settings.cookies?.browser && settings.cookies.browser !== 'none') {
+      args.push('--cookies-from-browser', settings.cookies.browser.toLowerCase());
+    }
+
+    // Gentle batching for playlists to avoid 429 rate limiting & IP bans
     if (item.groupId) {
-      args.push('--sleep-interval', '3', '--max-sleep-interval', '8', '--sleep-requests', '1');
+      args.push('--sleep-interval', '2', '--max-sleep-interval', '5', '--sleep-requests', '2');
       const group = this.groups.find((g) => g.id === item.groupId);
       if (group && group.options.skipAlreadyDownloaded) {
         const archiveFile = getPlaylistArchiveFilePath(group.id);
@@ -825,6 +836,10 @@ class QueueManager {
     item.sizeBytes = validation.fileSizeBytes;
     item.durationSec = validation.durationSeconds || expectedDuration;
 
+    // Reset cooldown attempt on successful download
+    this.cooldownAttempt = 0;
+    const group = item.groupId ? this.groups.find((g) => g.id === item.groupId) : undefined;
+
     // Record in History
     historyStore.add({
       id: item.id,
@@ -840,7 +855,11 @@ class QueueManager {
       downloadedAt: Date.now(),
       isFullVideo: !item.clip,
       startSec: item.clip?.startSec,
-      endSec: item.clip?.endSec
+      endSec: item.clip?.endSec,
+      groupId: item.groupId,
+      groupTitle: group?.title,
+      indexInGroup: item.indexInGroup,
+      totalInGroup: group?.childIds?.length
     });
 
     if (this.notificationsEnabled && Notification.isSupported()) {

@@ -9,20 +9,20 @@ import { queueManager } from './download/queue';
 import { historyStore } from './download/history';
 import { detectPlaylistUrl, fetchPlaylistInfo } from './download/playlist';
 
-const isDev = !app.isPackaged;
+const isDev = Boolean(!app?.isPackaged);
 
 // Set userData to YOUCUT_HOME before anything else
 const youcutHome = getYouCutHome();
 try {
-  app.setPath('userData', youcutHome);
+  app?.setPath?.('userData', youcutHome);
 } catch (e) {
   console.warn('[Main] Failed to set userData path:', e);
 }
 
 // Disable GPU in sandbox to prevent access violation crashes
-app.commandLine.appendSwitch('no-sandbox');
-app.commandLine.appendSwitch('disable-gpu');
-app.commandLine.appendSwitch('disable-software-rasterizer');
+app?.commandLine?.appendSwitch('no-sandbox');
+app?.commandLine?.appendSwitch('disable-gpu');
+app?.commandLine?.appendSwitch('disable-software-rasterizer');
 
 let mainWindow: BrowserWindow | null = null;
 const activeChildPids = new Set<number>();
@@ -141,7 +141,8 @@ function createWindow(): void {
 }
 
 // IPC Handlers - registered exactly once
-ipcMain.handle('app:version', () => app.getVersion());
+if (ipcMain?.handle) {
+ipcMain.handle('app:version', () => app?.getVersion ? app.getVersion() : '2.0.0');
 ipcMain.handle('app:home', () => getYouCutHome());
 ipcMain.handle('binaries:status', () => {
   return {
@@ -370,14 +371,24 @@ ipcMain.handle('youtube:fetch-info', async (_event, rawUrl: string) => {
 
   return new Promise((resolve, reject) => {
     const denoPath = getBinaryPath('deno');
+    const settings = settingsManager.getSettings();
     const args = [
       '--dump-json',
       '--no-playlist',
       '--js-runtimes',
       `deno:${denoPath}`,
-      '--no-warnings',
-      cleanUrl
+      '--user-agent',
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      '--no-warnings'
     ];
+
+    if (settings.cookies?.file && fs.existsSync(settings.cookies.file)) {
+      args.push('--cookies', settings.cookies.file);
+    } else if (settings.cookies?.browser && settings.cookies.browser !== 'none') {
+      args.push('--cookies-from-browser', settings.cookies.browser.toLowerCase());
+    }
+
+    args.push(cleanUrl);
 
     execFile(
       ytdlpPath,
@@ -445,7 +456,9 @@ ipcMain.handle('youtube:fetch-info', async (_event, rawUrl: string) => {
     );
   });
 });
+}
 
+if (app?.whenReady) {
 app.whenReady().then(() => {
   // Grant clipboard and media permissions for the app session
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
@@ -462,7 +475,9 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+}
 
+if (app?.on) {
 app.on('before-quit', () => {
   cleanupAllProcesses();
 });
@@ -473,6 +488,7 @@ app.on('window-all-closed', () => {
     app.quit();
   }
 });
+}
 
 // Global uncaughtException handler (Lesson 10)
 process.on('uncaughtException', (err) => {

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { execFile } from 'child_process';
 import { getBinaryPath, getYouCutHome } from '../config/paths';
+import { settingsManager } from '../config/settings';
 import { PlaylistDetectResult, PlaylistInfo, PlaylistEntry } from '../../shared/types';
 import { sanitizeFilename } from '../../shared/filename';
 
@@ -65,12 +66,25 @@ export async function fetchPlaylistInfo(url: string): Promise<PlaylistInfo> {
     throw new Error('yt-dlp binary not found at ' + ytdlpPath);
   }
 
+  const denoPath = getBinaryPath('deno');
+  const settings = settingsManager.getSettings();
   const args = [
     '--flat-playlist',
     '-J',
-    '--no-warnings',
-    cleanUrl
+    '--js-runtimes',
+    `deno:${denoPath}`,
+    '--user-agent',
+    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    '--no-warnings'
   ];
+
+  if (settings.cookies?.file && fs.existsSync(settings.cookies.file)) {
+    args.push('--cookies', settings.cookies.file);
+  } else if (settings.cookies?.browser && settings.cookies.browser !== 'none') {
+    args.push('--cookies-from-browser', settings.cookies.browser.toLowerCase());
+  }
+
+  args.push(cleanUrl);
 
   return new Promise((resolve, reject) => {
     execFile(

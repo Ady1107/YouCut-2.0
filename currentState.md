@@ -8,10 +8,13 @@
 - **Project**: YouCut v2.0 — Windows desktop video & audio clipper (YouTube, Instagram, Facebook).
 - **Core Principle**: Zero Python/Qt in the UI. Pure Electron 33 + TypeScript + React 18 frontend orchestrating standalone native Windows binaries (`yt-dlp.exe`, `ffmpeg.exe`, `ffprobe.exe`).
 - **Current Branch**: `dev` (feature branch `feat/queue-v2-playlist` merged into `dev`).
-- **Current State**: **Queue Redesign (Queue v2) & YouTube Playlist Feature Completed & Fully Verified**.
+- **Current State**: **Queue Redesign, YouTube Playlist, Rate-Limit IP Protection, History Grouping & Native Binary Updaters Completed & Verified**.
   - All mockups from design images (`media_1794726208336_ebcfad2e.png` for Queue board and `media_1794726208335_fe5e20f6.png` for YouTube Playlist board) strictly matched.
   - Multi-concurrency (1–3), rolling 3s speed measurement, 21-sample sparkline history buffer, auto-retry with exponential backoff (2s, 8s, 30s), drag-and-drop queue reordering (`@dnd-kit`), atomic debounced JSON persistence to `%APPDATA%\YouCut2\queue.json`.
   - YouTube Playlist downloader: `yt-dlp --flat-playlist -J`, virtualized list for 500+ items (`@tanstack/react-virtual`), range selection inputs with shift-click support, zero-padded numbering `<NN> - <title>`, playlist folder creation, archive file deduplication (`%APPDATA%\YouCut2\archives\<playlistId>.txt`), size estimation.
+  - **YouTube Rate-Limit & IP Ban Protection**: Passes browser cookies (`--cookies-from-browser` / `--cookies <file>`), desktop User-Agent, and gentle playlist batch pacing (`--sleep-requests 2`, `--sleep-interval 2 --max-sleep-interval 5`) to prevent 429 triggers. Tuned safety cooldown backoff (30s -> 60s -> 180s) with `!` info tooltip explaining IP ban prevention and an instant "Resume now" action.
+  - **History Tab Playlist & Shorts System (Image 4 format)**: Extended `HistoryRecord` with `groupId`, `groupTitle`, `indexInGroup`, `totalInGroup`. Renders collapsible `HistoryGroupCard` with header badges, total size, 100% progress line, item index, checkmarks, file sizes, Show in Folder, and Play File actions.
+  - **Real Native Binary Updaters (FFmpeg & yt-dlp)**: Replaced prototype UI and dummy handlers with real streaming HTTP downloaders for `yt-dlp` and `ffmpeg` (Gyan.dev/GitHub releases), real-time byte progress & speed calculation, atomic installation in `YOUCUT_HOME/bin/`, and version verification.
   - Dark and Light themes with ≥4.5:1 text contrast and semantic CSS tokens in `tokens.css`.
   - 195px sidebar preserved; offline bundled typography (`@fontsource/inter`, `@fontsource/space-grotesk`).
 
@@ -236,12 +239,16 @@ node scripts/capture-queue-playlist-screenshots.mjs
 
 ## 📊 Verification Evidence
 
-- **Unit Tests**: 11/11 passing (`test/queue-playlist.test.ts`).
+- **Unit Tests**: 15/15 passing across `test/queue-playlist.test.ts` and `test/history-updates.test.ts`.
 - **Type Checking**: Node and Web TypeScript compilation passed with zero errors (`tsc --noEmit`).
 - **Production Build**: `electron-vite build` passed with zero errors.
+- **Gate 3 Verification Suite**: 8/8 automated Playwright CDP steps passed with exit code 0 (`scripts/verify-gate3.mjs`).
 - **Visual Artifacts**:
   1. `docs/screenshots/p4-queue-playlist/01-queue-board-dark.png`
   2. `docs/screenshots/p4-queue-playlist/02-queue-board-light.png`
   3. `docs/screenshots/p4-queue-playlist/03-playlist-view-dark.png`
   4. `docs/screenshots/p4-queue-playlist/04-playlist-view-light.png`
   5. `docs/screenshots/p4-queue-playlist/05-playlist-selection-range.png`
+  6. `docs/screenshots/gate3/gate3-playlist-initial.png`
+  7. `docs/screenshots/gate3/gate3-cooldown-banner.png`
+  8. `docs/screenshots/gate3/gate3-playlist-final.png`

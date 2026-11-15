@@ -20,8 +20,10 @@ export const SettingsRoute: React.FC = () => {
   const isFixture =
     typeof window !== 'undefined' &&
     (window.location.search.includes('fixture=settings-design') ||
-      (window as any).__YOUCUT_FIXTURE__ === 'settings-design' ||
-      process.env.NODE_ENV !== 'production');
+      (window as any).__YOUCUT_FIXTURE__ === 'settings-design');
+
+  // Real updates state
+  const [updatesState, setUpdatesState] = useState<any>(null);
 
   // Downloads state
   const [outputFolder, setOutputFolder] = useState<string>(
@@ -47,6 +49,29 @@ export const SettingsRoute: React.FC = () => {
   // Updates global state
   const [isCheckingAll, setIsCheckingAll] = useState<boolean>(false);
   const [lastCheckedText, setLastCheckedText] = useState<string>('Last checked today, 14:02');
+
+  // Subscribe to real updates state
+  useEffect(() => {
+    if (typeof window !== 'undefined' && window.api?.getUpdatesState) {
+      window.api.getUpdatesState().then((st: any) => {
+        if (st) {
+          setUpdatesState(st);
+          if (st.lastCheckedAt) setLastCheckedText('Last checked ' + st.lastCheckedAt);
+        }
+      }).catch(() => {});
+    }
+
+    if (typeof window !== 'undefined' && window.api?.onUpdatesState) {
+      const unsub = window.api.onUpdatesState((st: any) => {
+        if (st) {
+          setUpdatesState(st);
+          if (st.lastCheckedAt) setLastCheckedText('Last checked ' + st.lastCheckedAt);
+        }
+      });
+      return unsub;
+    }
+    return undefined;
+  }, []);
 
   // Load persisted settings on mount
   useEffect(() => {
@@ -128,9 +153,10 @@ export const SettingsRoute: React.FC = () => {
     setIsCheckingAll(true);
     if (window.api?.checkUpdates) {
       try {
-        await window.api.checkUpdates('all');
+        const res = await window.api.checkUpdates('all');
+        if (res) setUpdatesState(res);
         setLastCheckedText('Last checked today, ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-        showToast('All tools are up to date', 'success');
+        showToast('All tools checked for updates', 'success');
       } catch {
         showToast('Could not check for updates', 'error');
       }
@@ -141,6 +167,40 @@ export const SettingsRoute: React.FC = () => {
       }, 1000);
     }
     setIsCheckingAll(false);
+  };
+
+  const handleUpdateTool = async (tool: 'ytdlp' | 'ffmpeg') => {
+    if (window.api?.applyUpdate) {
+      try {
+        await window.api.applyUpdate(tool);
+        showToast(`Starting ${tool === 'ytdlp' ? 'yt-dlp' : 'FFmpeg'} download...`, 'info');
+      } catch (e: any) {
+        showToast(`Failed to update ${tool}: ${e.message}`, 'error');
+      }
+    }
+  };
+
+  const handleCancelToolUpdate = async (tool: 'ytdlp' | 'ffmpeg') => {
+    if (window.api?.cancelUpdate) {
+      try {
+        await window.api.cancelUpdate(tool);
+        showToast(`Update cancelled for ${tool === 'ytdlp' ? 'yt-dlp' : 'FFmpeg'}`, 'info');
+      } catch (e: any) {
+        showToast(`Failed to cancel update: ${e.message}`, 'error');
+      }
+    }
+  };
+
+  const handleCheckTool = async (tool: 'ytdlp' | 'ffmpeg' | 'youcut') => {
+    if (window.api?.checkUpdates) {
+      try {
+        showToast(`Checking for ${tool === 'ytdlp' ? 'yt-dlp' : tool === 'ffmpeg' ? 'FFmpeg' : 'YouCut'} updates...`, 'info');
+        const st = await window.api.checkUpdates(tool);
+        if (st) setUpdatesState(st);
+      } catch (e: any) {
+        showToast(`Check failed: ${e.message}`, 'error');
+      }
+    }
   };
 
   const handleCopyDiagnostics = async () => {
@@ -307,175 +367,345 @@ export const SettingsRoute: React.FC = () => {
             </div>
 
             {/* Card 2: yt-dlp */}
-            <div className="w-full h-[288px] rounded-[20px] p-5 border border-[#232733] bg-[#14161D] flex flex-col justify-between box-border shadow-sm">
-              <div>
-                {/* Header Row */}
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-11 h-11 rounded-[12px] bg-[#1B1E27] border border-[#2A2E3B] flex items-center justify-center shrink-0">
-                      <DownloadIcon size={20} className="text-foreground" strokeWidth={2} />
-                    </div>
-                    <div>
-                      <div className="font-semibold text-base text-foreground tracking-tight leading-tight">
-                        yt-dlp
-                      </div>
-                      <div className="text-[13px] text-foreground-muted mt-0.5">Version 2026.10.26</div>
-                    </div>
-                  </div>
-                  {/* Status Badge */}
-                  <div className="h-6 px-2.5 rounded-full bg-[#2A1B19] flex items-center gap-1.5 text-[12px] font-medium text-[#FB923C]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#FB923C] animate-pulse" />
-                    <span>Updating</span>
-                  </div>
-                </div>
+            {(() => {
+              const ytdlp = updatesState?.tools?.ytdlp;
+              const status = ytdlp?.status || (isFixture ? 'downloading' : 'upToDate');
+              const version = ytdlp?.version || '2026.10.26';
+              const progress = ytdlp?.progress !== undefined ? ytdlp.progress : (isFixture ? 64 : 0);
+              const speed = ytdlp?.speed || (isFixture ? '5.2 MB/s' : '');
+              const targetVer = ytdlp?.targetVersion || (isFixture ? 'v2026.11.12' : '');
+              const checkedAt = ytdlp?.checkedAt || 'Download engine · checked today';
 
-                <div className="text-[12.5px] text-foreground-muted mt-3">
-                  Download engine · started just now
-                </div>
-
-                {/* Middle State (Updating / Progress) */}
-                <div className="mt-4">
-                  <div className="w-full h-1 bg-[#232733] rounded-full overflow-hidden mb-2">
-                    <div className="h-full bg-accent rounded-full w-[64%]" />
-                  </div>
-                  <div className="flex items-center justify-between text-[12px]">
-                    <span className="text-foreground-muted">Downloading v2026.11.12</span>
-                    <span className="text-foreground font-medium tabular-nums">64% · 5.2 MB/s</span>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                {/* Toggle Row */}
-                <div className="flex items-center gap-3 pt-3 mb-4">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={ytdlpAutoUpdate}
-                    onClick={() => {
-                      const next = !ytdlpAutoUpdate;
-                      setYtdlpAutoUpdate(next);
-                      window.api?.patchSettings?.({ updates: { ytdlp: { autoUpdate: next } } });
-                    }}
-                    className={`w-11 h-[26px] rounded-full transition-colors relative cursor-pointer focus:outline-none shrink-0 ${
-                      ytdlpAutoUpdate ? 'bg-accent' : 'bg-[#2A2E3B]'
-                    }`}
-                  >
-                    <span
-                      className={`block w-4 h-4 rounded-full bg-white transition-transform shadow-sm absolute top-[5px] ${
-                        ytdlpAutoUpdate ? 'left-[23px]' : 'left-[5px]'
-                      }`}
-                    />
-                  </button>
+              return (
+                <div className="w-full h-[288px] rounded-[20px] p-5 border border-[#232733] bg-[#14161D] flex flex-col justify-between box-border shadow-sm">
                   <div>
-                    <div className="text-[13px] font-medium text-foreground leading-snug">
-                      Update automatically on startup
+                    {/* Header Row */}
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-11 h-11 rounded-[12px] bg-[#1B1E27] border border-[#2A2E3B] flex items-center justify-center shrink-0">
+                          <DownloadIcon size={20} className="text-foreground" strokeWidth={2} />
+                        </div>
+                        <div>
+                          <div className="font-semibold text-base text-foreground tracking-tight leading-tight">
+                            yt-dlp
+                          </div>
+                          <div className="text-[13px] text-foreground-muted mt-0.5 font-mono">
+                            Version {version}
+                          </div>
+                        </div>
+                      </div>
+                      {/* Status Badge */}
+                      {status === 'downloading' || status === 'installing' ? (
+                        <div className="h-6 px-2.5 rounded-full bg-[#2A1B19] flex items-center gap-1.5 text-[12px] font-medium text-[#FB923C]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#FB923C] animate-pulse" />
+                          <span>{status === 'installing' ? 'Installing' : 'Updating'}</span>
+                        </div>
+                      ) : status === 'available' ? (
+                        <div className="h-6 px-2.5 rounded-full bg-[#2B2212] flex items-center gap-1.5 text-[12px] font-medium text-[#D7A344]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#D7A344]" />
+                          <span>Update available</span>
+                        </div>
+                      ) : status === 'checking' ? (
+                        <div className="h-6 px-2.5 rounded-full bg-[#1B1E27] flex items-center gap-1.5 text-[12px] font-medium text-foreground-muted">
+                          <RefreshCwIcon size={12} className="animate-spin" />
+                          <span>Checking...</span>
+                        </div>
+                      ) : status === 'error' ? (
+                        <div className="h-6 px-2.5 rounded-full bg-status-dangerTint flex items-center gap-1.5 text-[12px] font-medium text-status-danger">
+                          <span className="w-1.5 h-1.5 rounded-full bg-status-danger" />
+                          <span>Error</span>
+                        </div>
+                      ) : (
+                        <div className="h-6 px-2.5 rounded-full bg-[#12261D] flex items-center gap-1.5 text-[12px] font-medium text-[#34D399]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#34D399]" />
+                          <span>Up to date</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-[11.5px] text-foreground-muted leading-tight mt-0.5">
-                      Recommended, YouTube changes often
+
+                    <div className="text-[12.5px] text-foreground-muted mt-3 truncate" title={checkedAt}>
+                      {checkedAt}
                     </div>
+
+                    {/* Middle State */}
+                    {status === 'downloading' || status === 'installing' ? (
+                      <div className="mt-4">
+                        <div className="w-full h-1 bg-[#232733] rounded-full overflow-hidden mb-2">
+                          <div
+                            className="h-full bg-accent rounded-full transition-all duration-300"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[12px]">
+                          <span className="text-foreground-muted truncate mr-2">
+                            {status === 'installing' ? 'Verifying & installing...' : `Downloading ${targetVer || 'latest'}`}
+                          </span>
+                          <span className="text-foreground font-medium tabular-nums font-mono flex-none">
+                            {progress}% · {speed || '—'}
+                          </span>
+                        </div>
+                      </div>
+                    ) : status === 'available' ? (
+                      <div className="mt-5 flex items-center justify-between text-[13px]">
+                        <span className="text-foreground font-medium">New release {targetVer} available</span>
+                      </div>
+                    ) : status === 'checking' ? (
+                      <div className="mt-5 flex items-center gap-2 text-[13px] text-foreground-muted">
+                        <RefreshCwIcon size={14} className="animate-spin text-accent" />
+                        <span>Checking GitHub for updates...</span>
+                      </div>
+                    ) : status === 'error' ? (
+                      <div className="mt-5 text-[12px] text-status-danger truncate" title={ytdlp?.errorMessage}>
+                        {ytdlp?.errorMessage || 'Check or update failed'}
+                      </div>
+                    ) : (
+                      <div className="mt-5 flex items-center gap-2 text-[13px] font-medium text-foreground">
+                        <CheckIcon size={16} className="text-[#34D399]" strokeWidth={2.4} />
+                        <span>You're on the latest version.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    {/* Toggle Row */}
+                    <div className="flex items-center gap-3 pt-3 mb-4">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={ytdlpAutoUpdate}
+                        onClick={() => {
+                          const next = !ytdlpAutoUpdate;
+                          setYtdlpAutoUpdate(next);
+                          window.api?.patchSettings?.({ updates: { ytdlp: { autoUpdate: next } } });
+                        }}
+                        className={`w-11 h-[26px] rounded-full transition-colors relative cursor-pointer focus:outline-none shrink-0 ${
+                          ytdlpAutoUpdate ? 'bg-accent' : 'bg-[#2A2E3B]'
+                        }`}
+                      >
+                        <span
+                          className={`block w-4 h-4 rounded-full bg-white transition-transform shadow-sm absolute top-[5px] ${
+                            ytdlpAutoUpdate ? 'left-[23px]' : 'left-[5px]'
+                          }`}
+                        />
+                      </button>
+                      <div>
+                        <div className="text-[13px] font-medium text-foreground leading-snug">
+                          Update automatically on startup
+                        </div>
+                        <div className="text-[11.5px] text-foreground-muted leading-tight mt-0.5">
+                          Recommended, YouTube changes often
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bottom Button */}
+                    {status === 'downloading' || status === 'installing' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelToolUpdate('ytdlp')}
+                        className="w-full h-11 rounded-[12px] border border-[#2A2E3B] bg-[#1B1E27] text-foreground text-sm font-medium flex items-center justify-center hover:bg-[#222632] active:scale-98 transition-all cursor-pointer"
+                      >
+                        Cancel update
+                      </button>
+                    ) : status === 'available' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateTool('ytdlp')}
+                        className="w-full h-11 rounded-[12px] bg-accent text-[#1A0805] text-sm font-semibold flex items-center justify-center gap-2 hover:brightness-105 active:scale-98 transition-all shadow-sm cursor-pointer"
+                      >
+                        <DownloadIcon size={17} strokeWidth={2.4} />
+                        <span>Update now</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleCheckTool('ytdlp')}
+                        disabled={status === 'checking'}
+                        className="w-full h-11 rounded-[12px] border border-[#2A2E3B] bg-[#1B1E27] text-foreground text-sm font-medium flex items-center justify-center gap-2 hover:bg-[#222632] active:scale-98 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCwIcon size={15} className={status === 'checking' ? 'animate-spin' : ''} />
+                        <span>Check for updates</span>
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                {/* Bottom Button */}
-                <button
-                  type="button"
-                  onClick={() => showToast('Update cancelled', 'info')}
-                  className="w-full h-11 rounded-[12px] border border-[#2A2E3B] bg-[#1B1E27] text-foreground text-sm font-medium flex items-center justify-center hover:bg-[#222632] active:scale-98 transition-all cursor-pointer"
-                >
-                  Cancel update
-                </button>
-              </div>
-            </div>
+              );
+            })()}
 
             {/* Card 3: FFmpeg */}
-            <div className="w-full h-[288px] rounded-[20px] p-5 border border-[#232733] bg-[#14161D] flex flex-col justify-between box-border shadow-sm">
-              <div>
-                {/* Header Row */}
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3.5">
-                    <div className="w-11 h-11 rounded-[12px] bg-[#1B1E27] border border-[#2A2E3B] flex items-center justify-center shrink-0">
-                      <FilmIcon size={20} className="text-foreground" strokeWidth={2} />
-                    </div>
-                    <div>
-                      <div className="font-semibold text-base text-foreground tracking-tight leading-tight">
-                        FFmpeg
-                      </div>
-                      <div className="text-[13px] text-foreground-muted mt-0.5 font-mono">
-                        N-127579-g5cb9fcd2..
-                      </div>
-                    </div>
-                  </div>
-                  {/* Status Badge */}
-                  <div className="h-6 px-2.5 rounded-full bg-[#2B2212] flex items-center gap-1.5 text-[12px] font-medium text-[#D7A344]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#D7A344]" />
-                    <span>Update available</span>
-                  </div>
-                </div>
+            {(() => {
+              const ffmpeg = updatesState?.tools?.ffmpeg;
+              const status = ffmpeg?.status || (isFixture ? 'available' : 'upToDate');
+              const version = ffmpeg?.version || 'N-127579-g5cb9fcd2..';
+              const progress = ffmpeg?.progress !== undefined ? ffmpeg.progress : 0;
+              const speed = ffmpeg?.speed || '';
+              const buildDate = ffmpeg?.newBuildDate || (isFixture ? '2026-11-12' : '');
+              const buildSize = ffmpeg?.newBuildSize || (isFixture ? '82 MB' : '');
+              const checkedAt = ffmpeg?.checkedAt || 'Video tools · checked today';
 
-                <div className="text-[12.5px] text-foreground-muted mt-3">
-                  Video tools · checked today, 14:02
-                </div>
-
-                {/* Middle State */}
-                <div className="mt-5 flex items-center justify-between text-[13px]">
-                  <span className="text-foreground font-medium">New build 2026-11-12 · ≈ 82 MB</span>
-                  <a
-                    href="#"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      showToast('Opening FFmpeg build notes...', 'info');
-                    }}
-                    className="text-accent font-medium hover:underline cursor-pointer"
-                  >
-                    What's new
-                  </a>
-                </div>
-              </div>
-
-              <div>
-                {/* Toggle Row */}
-                <div className="flex items-center gap-3 pt-3 mb-4">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={ffmpegAutoUpdate}
-                    onClick={() => {
-                      const next = !ffmpegAutoUpdate;
-                      setFfmpegAutoUpdate(next);
-                      window.api?.patchSettings?.({ updates: { ffmpeg: { autoUpdate: next } } });
-                    }}
-                    className={`w-11 h-[26px] rounded-full transition-colors relative cursor-pointer focus:outline-none shrink-0 ${
-                      ffmpegAutoUpdate ? 'bg-accent' : 'bg-[#2A2E3B]'
-                    }`}
-                  >
-                    <span
-                      className={`block w-4 h-4 rounded-full bg-white transition-transform shadow-sm absolute top-[5px] ${
-                        ffmpegAutoUpdate ? 'left-[23px]' : 'left-[5px]'
-                      }`}
-                    />
-                  </button>
+              return (
+                <div className="w-full h-[288px] rounded-[20px] p-5 border border-[#232733] bg-[#14161D] flex flex-col justify-between box-border shadow-sm">
                   <div>
-                    <div className="text-[13px] font-medium text-foreground leading-snug">
-                      Update automatically on startup
+                    {/* Header Row */}
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3.5">
+                        <div className="w-11 h-11 rounded-[12px] bg-[#1B1E27] border border-[#2A2E3B] flex items-center justify-center shrink-0">
+                          <FilmIcon size={20} className="text-foreground" strokeWidth={2} />
+                        </div>
+                        <div>
+                          <div className="font-semibold text-base text-foreground tracking-tight leading-tight">
+                            FFmpeg
+                          </div>
+                          <div className="text-[13px] text-foreground-muted mt-0.5 font-mono truncate max-w-[130px]" title={version}>
+                            {version}
+                          </div>
+                        </div>
+                      </div>
+                      {/* Status Badge */}
+                      {status === 'downloading' || status === 'installing' ? (
+                        <div className="h-6 px-2.5 rounded-full bg-[#2A1B19] flex items-center gap-1.5 text-[12px] font-medium text-[#FB923C]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#FB923C] animate-pulse" />
+                          <span>{status === 'installing' ? 'Installing' : 'Updating'}</span>
+                        </div>
+                      ) : status === 'available' ? (
+                        <div className="h-6 px-2.5 rounded-full bg-[#2B2212] flex items-center gap-1.5 text-[12px] font-medium text-[#D7A344]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#D7A344]" />
+                          <span>Update available</span>
+                        </div>
+                      ) : status === 'checking' ? (
+                        <div className="h-6 px-2.5 rounded-full bg-[#1B1E27] flex items-center gap-1.5 text-[12px] font-medium text-foreground-muted">
+                          <RefreshCwIcon size={12} className="animate-spin" />
+                          <span>Checking...</span>
+                        </div>
+                      ) : status === 'error' ? (
+                        <div className="h-6 px-2.5 rounded-full bg-status-dangerTint flex items-center gap-1.5 text-[12px] font-medium text-status-danger">
+                          <span className="w-1.5 h-1.5 rounded-full bg-status-danger" />
+                          <span>Error</span>
+                        </div>
+                      ) : (
+                        <div className="h-6 px-2.5 rounded-full bg-[#12261D] flex items-center gap-1.5 text-[12px] font-medium text-[#34D399]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[#34D399]" />
+                          <span>Up to date</span>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-[11.5px] text-foreground-muted leading-tight mt-0.5">
-                      The app checks each time it starts
+
+                    <div className="text-[12.5px] text-foreground-muted mt-3 truncate" title={checkedAt}>
+                      {checkedAt}
                     </div>
+
+                    {/* Middle State */}
+                    {status === 'downloading' || status === 'installing' ? (
+                      <div className="mt-4">
+                        <div className="w-full h-1 bg-[#232733] rounded-full overflow-hidden mb-2">
+                          <div
+                            className="h-full bg-accent rounded-full transition-all duration-300"
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                        <div className="flex items-center justify-between text-[12px]">
+                          <span className="text-foreground-muted truncate mr-2">
+                            {status === 'installing' ? 'Extracting & verifying...' : 'Downloading FFmpeg build'}
+                          </span>
+                          <span className="text-foreground font-medium tabular-nums font-mono flex-none">
+                            {progress}% · {speed || '—'}
+                          </span>
+                        </div>
+                      </div>
+                    ) : status === 'available' ? (
+                      <div className="mt-5 flex items-center justify-between text-[13px]">
+                        <span className="text-foreground font-medium">New build {buildDate} · ≈ {buildSize || '82 MB'}</span>
+                        <a
+                          href="https://github.com/GyanD/codexffmpeg/releases"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-accent font-medium hover:underline cursor-pointer flex-none ml-2"
+                        >
+                          What's new
+                        </a>
+                      </div>
+                    ) : status === 'checking' ? (
+                      <div className="mt-5 flex items-center gap-2 text-[13px] text-foreground-muted">
+                        <RefreshCwIcon size={14} className="animate-spin text-accent" />
+                        <span>Checking for FFmpeg build...</span>
+                      </div>
+                    ) : status === 'error' ? (
+                      <div className="mt-5 text-[12px] text-status-danger truncate" title={ffmpeg?.errorMessage}>
+                        {ffmpeg?.errorMessage || 'Check or update failed'}
+                      </div>
+                    ) : (
+                      <div className="mt-5 flex items-center gap-2 text-[13px] font-medium text-foreground">
+                        <CheckIcon size={16} className="text-[#34D399]" strokeWidth={2.4} />
+                        <span>You're on the latest version.</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    {/* Toggle Row */}
+                    <div className="flex items-center gap-3 pt-3 mb-4">
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={ffmpegAutoUpdate}
+                        onClick={() => {
+                          const next = !ffmpegAutoUpdate;
+                          setFfmpegAutoUpdate(next);
+                          window.api?.patchSettings?.({ updates: { ffmpeg: { autoUpdate: next } } });
+                        }}
+                        className={`w-11 h-[26px] rounded-full transition-colors relative cursor-pointer focus:outline-none shrink-0 ${
+                          ffmpegAutoUpdate ? 'bg-accent' : 'bg-[#2A2E3B]'
+                        }`}
+                      >
+                        <span
+                          className={`block w-4 h-4 rounded-full bg-white transition-transform shadow-sm absolute top-[5px] ${
+                            ffmpegAutoUpdate ? 'left-[23px]' : 'left-[5px]'
+                          }`}
+                        />
+                      </button>
+                      <div>
+                        <div className="text-[13px] font-medium text-foreground leading-snug">
+                          Update automatically on startup
+                        </div>
+                        <div className="text-[11.5px] text-foreground-muted leading-tight mt-0.5">
+                          The app checks each time it starts
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bottom Button */}
+                    {status === 'downloading' || status === 'installing' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleCancelToolUpdate('ffmpeg')}
+                        className="w-full h-11 rounded-[12px] border border-[#2A2E3B] bg-[#1B1E27] text-foreground text-sm font-medium flex items-center justify-center hover:bg-[#222632] active:scale-98 transition-all cursor-pointer"
+                      >
+                        Cancel update
+                      </button>
+                    ) : status === 'available' ? (
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateTool('ffmpeg')}
+                        className="w-full h-11 rounded-[12px] bg-accent text-[#1A0805] text-sm font-semibold flex items-center justify-center gap-2 hover:brightness-105 active:scale-98 transition-all shadow-sm cursor-pointer"
+                      >
+                        <DownloadIcon size={17} strokeWidth={2.4} />
+                        <span>Update now</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => handleCheckTool('ffmpeg')}
+                        disabled={status === 'checking'}
+                        className="w-full h-11 rounded-[12px] border border-[#2A2E3B] bg-[#1B1E27] text-foreground text-sm font-medium flex items-center justify-center gap-2 hover:bg-[#222632] active:scale-98 transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <RefreshCwIcon size={15} className={status === 'checking' ? 'animate-spin' : ''} />
+                        <span>Check for updates</span>
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                {/* Bottom Button */}
-                <button
-                  type="button"
-                  onClick={() => showToast('Downloading FFmpeg update...', 'info')}
-                  className="w-full h-11 rounded-[12px] bg-accent text-[#1A0805] text-sm font-semibold flex items-center justify-center gap-2 hover:brightness-105 active:scale-98 transition-all shadow-sm cursor-pointer"
-                >
-                  <DownloadIcon size={17} strokeWidth={2.4} />
-                  <span>Update now</span>
-                </button>
-              </div>
-            </div>
+              );
+            })()}
           </div>
         </section>
 

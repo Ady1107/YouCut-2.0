@@ -289,13 +289,27 @@ export const QueueRoute: React.FC = () => {
 
       {/* Rate limit cooldown countdown banner (D2) */}
       {cooldownSec > 0 && (
-        <div className="p-3.5 sm:p-4 rounded-[16px] bg-status-dangerTint border border-status-danger/40 flex items-center justify-between shadow-sm">
-          <div className="flex items-center gap-2.5 text-status-danger font-medium text-xs sm:text-sm">
+        <div className="p-3.5 sm:p-4 rounded-[16px] bg-status-dangerTint border border-status-danger/40 flex items-center justify-between shadow-sm gap-3">
+          <div className="flex items-center gap-2.5 text-status-danger font-medium text-xs sm:text-sm flex-wrap">
             <span className="w-2 h-2 rounded-full bg-status-danger animate-pulse flex-none" />
             <span>
               {cooldownReason || 'Rate limited by platform'}. Resuming in{' '}
               <strong className="font-mono font-bold">{formatCooldown(cooldownSec)}</strong>
             </span>
+            <div className="relative group/cooldowntip inline-flex items-center cursor-help">
+              <span
+                className="w-4 h-4 rounded-full bg-status-danger/20 border border-status-danger/50 text-status-danger flex items-center justify-center text-[10px] font-bold select-none"
+                title="Why is there a timer?"
+              >
+                !
+              </span>
+              <div className="absolute left-1/2 -translate-x-1/2 top-full mt-2 hidden group-hover/cooldowntip:block z-50 w-72 p-3 rounded-[10px] bg-[#14161D] border border-border-strong text-[11px] text-foreground-muted font-normal shadow-2xl pointer-events-none leading-relaxed">
+                <span className="font-semibold text-foreground block mb-1">
+                  Why is this safety timer active?
+                </span>
+                YouTube throttled requests from your network. This short safety pause prevents YouTube from temporarily or permanently banning your IP address. Click &quot;Resume now&quot; if you want to skip the wait.
+              </div>
+            </div>
           </div>
           <Button
             variant="secondary"

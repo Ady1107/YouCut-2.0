@@ -592,9 +592,19 @@ export const PlaylistGroupCard: React.FC<PlaylistGroupCardProps> = ({
                 {/* Failed Item One-Line Error and Stderr Details Accordion (C2) */}
                 {isFailed && (
                   <div className="pl-9 pr-2 text-[11px] text-status-danger/90 font-sans flex items-center justify-between">
-                    <span className="truncate" title={child.error}>
-                      {child.error || 'Download failed'}
-                    </span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="truncate" title={child.error}>
+                        {child.error || 'Download failed'}
+                      </span>
+                      {child.error?.includes('429') && (
+                        <span
+                          className="w-3.5 h-3.5 rounded-full bg-status-danger/20 border border-status-danger/50 text-status-danger flex items-center justify-center text-[9px] font-bold cursor-help flex-none"
+                          title="Safety cooldown prevents IP bans from YouTube"
+                        >
+                          !
+                        </span>
+                      )}
+                    </div>
                     {child.stderrTail && child.stderrTail.length > 0 && (
                       <button
                         type="button"

@@ -17,6 +17,10 @@ export interface HistoryRecord {
   isFullVideo: boolean;
   startSec?: number;
   endSec?: number;
+  groupId?: string;
+  groupTitle?: string;
+  indexInGroup?: number;
+  totalInGroup?: number;
 }
 
 class HistoryStore {

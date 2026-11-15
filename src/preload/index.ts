@@ -57,6 +57,8 @@ export interface IElectronAPI {
   pauseQueueItem: (id: string) => Promise<void>;
   resumeQueueItem: (id: string) => Promise<void>;
   cancelQueueItem: (id: string) => Promise<void>;
+  retryFailedGroup: (groupId: string) => Promise<void>;
+  cancelRemainingGroup: (groupId: string) => Promise<void>;
   retryQueueItem: (id: string) => Promise<void>;
   removeQueueItem: (id: string) => Promise<void>;
   reorderQueue: (order: string[]) => Promise<void>;
@@ -113,6 +115,8 @@ const api: IElectronAPI = {
   pauseQueueItem: (id) => ipcRenderer.invoke('queue:pause', id),
   resumeQueueItem: (id) => ipcRenderer.invoke('queue:resume', id),
   cancelQueueItem: (id) => ipcRenderer.invoke('queue:cancel', id),
+  retryFailedGroup: (groupId) => ipcRenderer.invoke('queue:retry-failed-group', groupId),
+  cancelRemainingGroup: (groupId) => ipcRenderer.invoke('queue:cancel-remaining-group', groupId),
   retryQueueItem: (id) => ipcRenderer.invoke('queue:retry', id),
   removeQueueItem: (id) => ipcRenderer.invoke('queue:remove', id),
   reorderQueue: (order) => ipcRenderer.invoke('queue:reorder', order),

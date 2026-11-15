@@ -196,6 +196,14 @@ class QueueManager {
   }
 
   public startNow(targetId: string): void {
+    const item = this.items.find((i) => i.id === targetId);
+    if (item && (item.status === 'paused' || item.status === 'failed')) {
+      item.status = 'waiting';
+      item.phase = 'Waiting';
+      item.attempts = 0;
+      item.error = undefined;
+    }
+
     const idx = this.order.indexOf(targetId);
     if (idx > -1) {
       this.order.splice(idx, 1);
@@ -203,7 +211,6 @@ class QueueManager {
     }
 
     // If target is child of a group, promote it
-    const item = this.items.find((i) => i.id === targetId);
     if (item && item.groupId) {
       const group = this.groups.find((g) => g.id === item.groupId);
       if (group) {
@@ -293,6 +300,39 @@ class QueueManager {
       this.order = this.order.filter((o) => o !== id);
     }
 
+    this.persistQueue();
+    this.broadcastState();
+    this.triggerNext();
+  }
+
+  public retryFailedInGroup(groupId: string): void {
+    const group = this.groups.find((g) => g.id === groupId);
+    if (!group) return;
+    for (const cid of group.childIds) {
+      const child = this.items.find((i) => i.id === cid);
+      if (child && child.status === 'failed') {
+        child.status = 'waiting';
+        child.phase = 'Waiting';
+        child.attempts = 0;
+        child.error = undefined;
+      }
+    }
+    this.persistQueue();
+    this.broadcastState();
+    this.triggerNext();
+  }
+
+  public cancelRemainingInGroup(groupId: string): void {
+    const group = this.groups.find((g) => g.id === groupId);
+    if (!group) return;
+    for (const cid of group.childIds) {
+      const child = this.items.find((i) => i.id === cid);
+      if (child && (child.status === 'downloading' || child.status === 'waiting' || child.status === 'paused')) {
+        this.cancelSingleItem(cid);
+        this.items = this.items.filter((i) => i.id !== cid);
+        group.childIds = group.childIds.filter((id) => id !== cid);
+      }
+    }
     this.persistQueue();
     this.broadcastState();
     this.triggerNext();
@@ -577,6 +617,28 @@ class QueueManager {
     args.push(item.url);
 
     console.log(`[Queue] Starting download for "${item.title}" -> ${outputFilePath}`);
+
+    // Gate 3 & D2 Mock: Support YOUCUT_MOCK_YTDLP=429 and forced mock failures
+    if (process.env.YOUCUT_MOCK_YTDLP === '429' || item.url.includes('mock429=1') || item.title.includes('[MOCK_429]')) {
+      console.log(`[Queue Mock] Simulating HTTP 429 Rate Limit for "${item.title}"`);
+      item.attempts++;
+      setTimeout(() => {
+        const mockStderr = 'ERROR: [youtube] HTTP Error 429: Too Many Requests. You are being rate limited by YouTube.';
+        this.handleProcessFailure(item, mockStderr);
+      }, 400);
+      return;
+    }
+
+    if (process.env.YOUCUT_MOCK_FAIL === '1' || item.url.includes('mockfail=1') || item.title.includes('[MOCK_FAIL]')) {
+      console.log(`[Queue Mock] Simulating failure for "${item.title}"`);
+      item.attempts++;
+      setTimeout(() => {
+        const mockStderr = 'ERROR: [youtube] Video unavailable. This video is not available in your region.';
+        this.handleProcessFailure(item, mockStderr);
+        this.triggerNext();
+      }, 400);
+      return;
+    }
 
     const jobStartedAtMs = Date.now();
     const childEnv = {

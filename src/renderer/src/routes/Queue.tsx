@@ -67,6 +67,8 @@ export const QueueRoute: React.FC = () => {
     pauseItem,
     resumeItem,
     cancelItem,
+    retryFailedGroup,
+    cancelRemainingGroup,
     retryItem,
     removeItem,
     reorder,
@@ -239,7 +241,9 @@ export const QueueRoute: React.FC = () => {
               Download Queue
             </h1>
             <span className="px-3 py-0.5 rounded-full bg-surface border border-border text-foreground-subtle text-xs font-semibold select-none">
-              {totalCardCount} {totalCardCount === 1 ? 'item' : 'items'}
+              {groups.length > 0
+                ? `${items.length} items (${items.filter((i) => !i.groupId).length} ${items.filter((i) => !i.groupId).length === 1 ? 'video' : 'videos'} + ${groups.length} ${groups.length === 1 ? 'playlist' : 'playlists'} of ${items.filter((i) => Boolean(i.groupId)).length})`
+                : `${items.length} ${items.length === 1 ? 'item' : 'items'}`}
             </span>
           </div>
           <p className="text-foreground-muted text-xs">
@@ -346,7 +350,7 @@ export const QueueRoute: React.FC = () => {
       <FilterTabs
         activeTab={activeFilter}
         counts={{
-          all: totalCardCount,
+          all: items.length,
           downloading: activeCount,
           waiting: waitingCount,
           done: doneCount,
@@ -401,6 +405,15 @@ export const QueueRoute: React.FC = () => {
                           onPauseGroup={pauseItem}
                           onResumeGroup={resumeItem}
                           onCancelGroup={cancelItem}
+                          onRetryFailedGroup={retryFailedGroup}
+                          onCancelRemainingGroup={cancelRemainingGroup}
+                          onStartNowItem={startNow}
+                          onPauseItem={pauseItem}
+                          onResumeItem={resumeItem}
+                          onRetryItem={retryItem}
+                          onRemoveItem={removeItem}
+                          onShowInFolder={handleShowInFolder}
+                          onPlay={handleOpenFile}
                         />
                       )}
                     </SortableCardWrapper>

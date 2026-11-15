@@ -29,6 +29,8 @@ export interface QueueContextType {
   pauseItem: (id: string) => Promise<void>;
   resumeItem: (id: string) => Promise<void>;
   cancelItem: (id: string) => Promise<void>;
+  retryFailedGroup: (groupId: string) => Promise<void>;
+  cancelRemainingGroup: (groupId: string) => Promise<void>;
   retryItem: (id: string) => Promise<void>;
   removeItem: (id: string) => Promise<void>;
   reorder: (newOrder: string[]) => Promise<void>;
@@ -136,6 +138,14 @@ export const QueueProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (window.api?.cancelQueueItem) await window.api.cancelQueueItem(id);
   };
 
+  const retryFailedGroup = async (groupId: string): Promise<void> => {
+    if (window.api?.retryFailedGroup) await window.api.retryFailedGroup(groupId);
+  };
+
+  const cancelRemainingGroup = async (groupId: string): Promise<void> => {
+    if (window.api?.cancelRemainingGroup) await window.api.cancelRemainingGroup(groupId);
+  };
+
   const retryItem = async (id: string): Promise<void> => {
     if (window.api?.retryQueueItem) await window.api.retryQueueItem(id);
   };
@@ -207,6 +217,8 @@ export const QueueProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         pauseItem,
         resumeItem,
         cancelItem,
+        retryFailedGroup,
+        cancelRemainingGroup,
         retryItem,
         removeItem,
         reorder,

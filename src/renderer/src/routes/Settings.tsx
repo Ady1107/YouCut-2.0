@@ -192,23 +192,23 @@ export const SettingsRoute: React.FC = () => {
     <div className="flex-1 h-full overflow-y-auto bg-[#0B0C10] text-foreground select-none">
       <div className="max-w-[1280px] mx-auto p-8 box-border">
         {/* Page Header */}
-        <header className="mb-6">
-          <h1 className="font-display text-[28px] font-semibold text-foreground tracking-tight leading-tight">
+        <header className="mb-5">
+          <h1 className="font-display text-[28px] font-semibold text-foreground tracking-tight leading-none">
             Settings
           </h1>
-          <p className="text-[14px] text-foreground-muted mt-1">
+          <p className="text-[14px] text-foreground-muted mt-1.5 leading-normal">
             Make YouCut work the way you like.
           </p>
         </header>
 
         {/* Section: Updates */}
         <section className="mb-6">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between mb-3.5">
             <div>
-              <h2 className="text-[19px] font-semibold text-foreground tracking-tight">
+              <h2 className="text-[19px] font-semibold text-foreground tracking-tight leading-none">
                 Updates
               </h2>
-              <p className="text-[13px] text-foreground-muted mt-0.5">
+              <p className="text-[13px] text-foreground-muted mt-1 leading-normal">
                 Keep YouCut, yt-dlp and FFmpeg current so downloads keep working.
               </p>
             </div>
@@ -229,7 +229,7 @@ export const SettingsRoute: React.FC = () => {
           {/* 3 Equal Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
             {/* Card 1: YouCut */}
-            <div className="w-full h-[288px] rounded-[20px] p-5 border border-[#2A2E3B] bg-[#14161D] flex flex-col justify-between box-border shadow-sm">
+            <div id="update-card-youcut" className="w-full h-[288px] rounded-[20px] p-5 border border-[#232733] bg-[#14161D] flex flex-col justify-between box-border shadow-sm">
               <div>
                 {/* Header Row */}
                 <div className="flex items-start justify-between">
@@ -245,7 +245,7 @@ export const SettingsRoute: React.FC = () => {
                     </div>
                   </div>
                   {/* Status Badge */}
-                  <div className="h-6 px-2.5 rounded-full bg-[#0B2117] flex items-center gap-1.5 text-[12px] font-medium text-[#34D399]">
+                  <div className="h-6 px-2.5 rounded-full bg-[#12261D] flex items-center gap-1.5 text-[12px] font-medium text-[#34D399]">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#34D399]" />
                     <span>Up to date</span>
                   </div>
@@ -305,7 +305,7 @@ export const SettingsRoute: React.FC = () => {
             </div>
 
             {/* Card 2: yt-dlp */}
-            <div className="w-full h-[288px] rounded-[20px] p-5 border border-[#2A2E3B] bg-[#14161D] flex flex-col justify-between box-border shadow-sm">
+            <div className="w-full h-[288px] rounded-[20px] p-5 border border-[#232733] bg-[#14161D] flex flex-col justify-between box-border shadow-sm">
               <div>
                 {/* Header Row */}
                 <div className="flex items-start justify-between">
@@ -321,7 +321,7 @@ export const SettingsRoute: React.FC = () => {
                     </div>
                   </div>
                   {/* Status Badge */}
-                  <div className="h-6 px-2.5 rounded-full bg-[#291708] flex items-center gap-1.5 text-[12px] font-medium text-[#FB923C]">
+                  <div className="h-6 px-2.5 rounded-full bg-[#2A1B19] flex items-center gap-1.5 text-[12px] font-medium text-[#FB923C]">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#FB923C] animate-pulse" />
                     <span>Updating</span>
                   </div>
@@ -387,7 +387,7 @@ export const SettingsRoute: React.FC = () => {
             </div>
 
             {/* Card 3: FFmpeg */}
-            <div className="w-full h-[288px] rounded-[20px] p-5 border border-[#2A2E3B] bg-[#14161D] flex flex-col justify-between box-border shadow-sm">
+            <div className="w-full h-[288px] rounded-[20px] p-5 border border-[#232733] bg-[#14161D] flex flex-col justify-between box-border shadow-sm">
               <div>
                 {/* Header Row */}
                 <div className="flex items-start justify-between">
@@ -405,8 +405,8 @@ export const SettingsRoute: React.FC = () => {
                     </div>
                   </div>
                   {/* Status Badge */}
-                  <div className="h-6 px-2.5 rounded-full bg-[#281E08] flex items-center gap-1.5 text-[12px] font-medium text-[#FBBF24]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#FBBF24]" />
+                  <div className="h-6 px-2.5 rounded-full bg-[#2B2212] flex items-center gap-1.5 text-[12px] font-medium text-[#D7A344]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#D7A344]" />
                     <span>Update available</span>
                   </div>
                 </div>
@@ -482,7 +482,7 @@ export const SettingsRoute: React.FC = () => {
           {/* Left Column: Appearance + Downloads */}
           <div className="flex flex-col gap-5">
             {/* Appearance Card */}
-            <div className="rounded-[20px] p-5 border border-[#2A2E3B] bg-[#14161D] box-border shadow-sm">
+            <div className="rounded-[20px] p-5 border border-[#232733] bg-[#14161D] box-border shadow-sm">
               <h3 className="text-[18px] font-semibold text-foreground tracking-tight">Appearance</h3>
               <p className="text-[13px] text-foreground-muted mt-0.5 mb-4">
                 Choose how YouCut looks.
@@ -586,7 +586,7 @@ export const SettingsRoute: React.FC = () => {
             </div>
 
             {/* Downloads Card */}
-            <div className="rounded-[20px] p-5 border border-[#2A2E3B] bg-[#14161D] box-border shadow-sm">
+            <div className="rounded-[20px] p-5 border border-[#232733] bg-[#14161D] box-border shadow-sm">
               <h3 className="text-[18px] font-semibold text-foreground tracking-tight">Downloads</h3>
               <p className="text-[13px] text-foreground-muted mt-0.5 mb-4">
                 Defaults used for every new download.
@@ -719,7 +719,7 @@ export const SettingsRoute: React.FC = () => {
           {/* Right Column: Age-restricted + About */}
           <div className="flex flex-col gap-5">
             {/* Age-restricted and private videos Card */}
-            <div className="rounded-[20px] p-5 border border-[#2A2E3B] bg-[#14161D] box-border shadow-sm">
+            <div className="rounded-[20px] p-5 border border-[#232733] bg-[#14161D] box-border shadow-sm">
               <h3 className="text-[18px] font-semibold text-foreground tracking-tight">
                 Age-restricted and private videos
               </h3>
@@ -811,7 +811,7 @@ export const SettingsRoute: React.FC = () => {
             </div>
 
             {/* About Card */}
-            <div className="rounded-[20px] p-5 border border-[#2A2E3B] bg-[#14161D] box-border shadow-sm">
+            <div className="rounded-[20px] p-5 border border-[#232733] bg-[#14161D] box-border shadow-sm">
               <h3 className="text-[18px] font-semibold text-foreground tracking-tight">About</h3>
               <p className="text-[13px] text-foreground-muted mt-0.5 mb-4">
                 Version information for support.

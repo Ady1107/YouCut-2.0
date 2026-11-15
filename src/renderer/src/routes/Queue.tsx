@@ -1,135 +1,97 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigation } from '../context/NavigationContext';
+import { useQueue } from '../context/QueueContext';
 import { Card } from '../components/Card';
 import { Button } from '../components/Button';
+import { QueueIcon, ScissorsIcon, TrashIcon, PauseIcon, PlayIcon } from '../components/Icons';
+import { Sparkline } from '../components/queue/Sparkline';
+import { FilterTabs, QueueFilterTab } from '../components/queue/FilterTabs';
+import { ActiveItemCard } from '../components/queue/ActiveItemCard';
+import { WaitingCard } from '../components/queue/WaitingCard';
+import { DoneCard } from '../components/queue/DoneCard';
+import { FailedCard } from '../components/queue/FailedCard';
+import { PlaylistGroupCard } from '../components/queue/PlaylistGroupCard';
 import {
-  QueueIcon,
-  ScissorsIcon,
-  TrashIcon,
-  DownloadIcon,
-  PlayIcon,
-  PauseIcon,
-  FolderIcon,
-  YouTubeIcon,
-  InstagramIcon,
-  FacebookIcon,
-  CheckIcon,
-  RefreshCwIcon
-} from '../components/Icons';
-import { secondsToMs, secondsToHms } from '../utils/time';
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent
+} from '@dnd-kit/core';
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 
-export interface QueueItem {
+interface SortableCardWrapperProps {
   id: string;
-  title: string;
-  url: string;
-  platform: 'youtube' | 'instagram' | 'facebook';
-  thumbnail?: string;
-  duration?: number;
-  format: string;
-  quality: string;
-  startSec: number;
-  endSec: number;
-  isFullVideo: boolean;
-  frameAccurate: boolean;
-  saveFolder: string;
-  fileName: string;
-  status: 'queued' | 'downloading' | 'completed' | 'failed' | 'paused' | 'warning';
-  progress: number;
-  downloadedBytes: number;
-  totalBytes: number;
-  speed: string;
-  eta: string;
-  finalPath?: string;
-  warning?: string;
-  error?: string;
-  addedAt: number;
+  children: (dragHandleProps: any) => React.ReactNode;
 }
+
+const SortableCardWrapper: React.FC<SortableCardWrapperProps> = ({ id, children }) => {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id });
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.6 : 1,
+    zIndex: isDragging ? 10 : 1
+  };
+
+  return (
+    <div ref={setNodeRef} style={style}>
+      {children({ ...attributes, ...listeners })}
+    </div>
+  );
+};
 
 export const QueueRoute: React.FC = () => {
   const { navigate, showToast } = useNavigation();
-  const [items, setItems] = useState<QueueItem[]>([]);
+  const {
+    items,
+    groups,
+    order,
+    overallSpeedFormatted,
+    overallEtaFormatted,
+    waitingCount,
+    activeCount,
+    doneCount,
+    failedCount,
+    speedHistory,
+    pauseItem,
+    resumeItem,
+    cancelItem,
+    retryItem,
+    removeItem,
+    reorder,
+    startNow,
+    pauseAll,
+    resumeAll,
+    clearCompleted
+  } = useQueue();
 
-  // Fetch initial queue list and subscribe to updates
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.api?.getQueue) {
-      window.api.getQueue().then((qItems) => {
-        setItems(qItems as QueueItem[]);
-      }).catch((err) => console.error('Failed to get queue:', err));
-    }
-
-    if (typeof window !== 'undefined' && window.api?.onQueueUpdate) {
-      const unsubUpdate = window.api.onQueueUpdate((qItems) => {
-        setItems(qItems as QueueItem[]);
-      });
-      return unsubUpdate;
-    }
-  }, []);
-
-  // Subscribe to real-time download progress
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.api?.onQueueProgress) {
-      const unsubProgress = window.api.onQueueProgress((data) => {
-        setItems((prev) =>
-          prev.map((item) =>
-            item.id === data.id
-              ? {
-                  ...item,
-                  progress: data.progress,
-                  speed: data.speed,
-                  eta: data.eta,
-                  downloadedBytes: data.downloadedBytes,
-                  totalBytes: data.totalBytes
-                }
-              : item
-          )
-        );
-      });
-      return unsubProgress;
-    }
-  }, []);
-
-  const handlePauseItem = async (id: string) => {
+  // Filter tab state persisted in localStorage
+  const [activeFilter, setActiveFilter] = useState<QueueFilterTab>(() => {
     try {
-      if (window.api?.pauseQueueItem) {
-        await window.api.pauseQueueItem(id);
-        showToast('Download paused (.part file preserved)', 'info');
+      const saved = localStorage.getItem('youcut_queue_filter');
+      if (saved && ['all', 'downloading', 'waiting', 'done', 'failed'].includes(saved)) {
+        return saved as QueueFilterTab;
       }
-    } catch {
-      showToast('Failed to pause download', 'error');
-    }
-  };
+    } catch {}
+    return 'all';
+  });
 
-  const handleResumeItem = async (id: string) => {
+  const handleSelectFilter = (tab: QueueFilterTab) => {
+    setActiveFilter(tab);
     try {
-      if (window.api?.resumeQueueItem) {
-        await window.api.resumeQueueItem(id);
-        showToast('Resuming download...', 'info');
-      }
-    } catch {
-      showToast('Failed to resume download', 'error');
-    }
-  };
-
-  const handleCancelItem = async (id: string) => {
-    try {
-      if (window.api?.cancelQueueItem) {
-        await window.api.cancelQueueItem(id);
-        showToast('Download cancelled and partial files removed', 'info');
-      }
-    } catch {
-      showToast('Failed to cancel download', 'error');
-    }
-  };
-
-  const handleClearCompleted = async () => {
-    try {
-      if (window.api?.clearCompletedQueue) {
-        await window.api.clearCompletedQueue();
-        showToast('Cleared completed items from queue', 'info');
-      }
-    } catch {
-      showToast('Failed to clear completed items', 'error');
-    }
+      localStorage.setItem('youcut_queue_filter', tab);
+    } catch {}
   };
 
   const handleShowInFolder = async (filePath?: string) => {
@@ -149,74 +111,217 @@ export const QueueRoute: React.FC = () => {
     try {
       if (window.api?.openFile) {
         const ok = await window.api.openFile(filePath);
-        if (!ok) showToast('Could not open file (file may have been moved)', 'error');
+        if (!ok) showToast('Could not play file (file may have been moved)', 'error');
       }
     } catch {
       showToast('Could not play file', 'error');
     }
   };
 
-  const formatBytes = (bytes: number): string => {
-    if (!bytes || bytes <= 0) return '0 MB';
-    const mb = bytes / (1024 * 1024);
-    return `${mb.toFixed(1)} MB`;
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (over && active.id !== over.id) {
+      const oldIndex = order.indexOf(String(active.id));
+      const newIndex = order.indexOf(String(over.id));
+      if (oldIndex > -1 && newIndex > -1) {
+        const newOrder = arrayMove(order, oldIndex, newIndex);
+        reorder(newOrder);
+      }
+    }
   };
 
-  const getPlatformIcon = (platform: string) => {
-    if (platform === 'youtube') return <YouTubeIcon size={13} className="text-[#FF5B4A]" />;
-    if (platform === 'instagram') return <InstagramIcon size={13} className="text-[#E1306C]" />;
-    return <FacebookIcon size={13} className="text-[#1877F2]" />;
-  };
+  // Grouped cards list structure
+  const allCards = useMemo(() => {
+    const cards: Array<
+      | { type: 'group'; group: (typeof groups)[0]; children: typeof items }
+      | { type: 'item'; item: (typeof items)[0] }
+    > = [];
 
-  const completedCount = items.filter((i) => i.status === 'completed' || i.status === 'warning').length;
-  const activeCount = items.filter((i) => i.status === 'downloading' || i.status === 'queued').length;
+    const groupMap = new Map(groups.map((g) => [g.id, g]));
+    const standaloneItemMap = new Map(items.filter((i) => !i.groupId).map((i) => [i.id, i]));
+
+    for (const id of order) {
+      if (groupMap.has(id)) {
+        const g = groupMap.get(id)!;
+        const childItems = items.filter((i) => i.groupId === g.id);
+        cards.push({ type: 'group', group: g, children: childItems });
+        groupMap.delete(id);
+      } else if (standaloneItemMap.has(id)) {
+        cards.push({ type: 'item', item: standaloneItemMap.get(id)! });
+        standaloneItemMap.delete(id);
+      }
+    }
+
+    // Append any newly added groups or standalone items not yet in order
+    for (const g of groupMap.values()) {
+      const childItems = items.filter((i) => i.groupId === g.id);
+      cards.push({ type: 'group', group: g, children: childItems });
+    }
+    for (const i of standaloneItemMap.values()) {
+      cards.push({ type: 'item', item: i });
+    }
+
+    return cards;
+  }, [groups, items, order]);
+
+  // Apply tab filter
+  const filteredCards = useMemo(() => {
+    if (activeFilter === 'all') return allCards;
+
+    return allCards.filter((card) => {
+      if (card.type === 'item') {
+        if (activeFilter === 'downloading') return card.item.status === 'downloading';
+        if (activeFilter === 'waiting') return card.item.status === 'waiting' || card.item.status === 'paused';
+        if (activeFilter === 'done') return card.item.status === 'done';
+        if (activeFilter === 'failed') return card.item.status === 'failed';
+        return true;
+      } else {
+        // Group matches if any child matches status
+        if (activeFilter === 'downloading') {
+          return card.children.some((c) => c.status === 'downloading');
+        }
+        if (activeFilter === 'waiting') {
+          return card.children.some((c) => c.status === 'waiting' || c.status === 'paused');
+        }
+        if (activeFilter === 'done') {
+          return card.children.every((c) => c.status === 'done');
+        }
+        if (activeFilter === 'failed') {
+          return card.children.some((c) => c.status === 'failed');
+        }
+        return true;
+      }
+    });
+  }, [allCards, activeFilter]);
+
+  const totalCardCount = allCards.length;
+  const isAnyPaused = items.some((i) => i.status === 'paused');
+  const isAnyDownloading = items.some((i) => i.status === 'downloading');
 
   return (
-    <div className="flex-1 flex flex-col gap-6 p-6 sm:p-8 overflow-y-auto max-w-5xl mx-auto w-full box-border">
+    <div className="flex-1 flex flex-col gap-5 p-6 sm:p-8 overflow-y-auto max-w-5xl mx-auto w-full box-border">
       {/* Header */}
-      <div className="flex items-center justify-between pb-2 border-b border-border-subtle">
+      <div className="flex items-start justify-between gap-4">
         <div className="flex flex-col gap-1">
           <div className="flex items-center gap-3">
-            <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
+            <h1 className="font-display text-3xl font-bold tracking-tight text-foreground">
               Download Queue
             </h1>
-            <span className="px-2.5 py-0.5 rounded-full bg-surface border border-border text-foreground-subtle text-xs font-semibold">
-              {items.length} {items.length === 1 ? 'item' : 'items'}
-              {activeCount > 0 ? ` · ${activeCount} active` : ''}
+            <span className="px-3 py-0.5 rounded-full bg-surface border border-border text-foreground-subtle text-xs font-semibold select-none">
+              {totalCardCount} {totalCardCount === 1 ? 'item' : 'items'}
             </span>
           </div>
           <p className="text-foreground-muted text-xs">
-            Sequential downloads with automatic watchdog monitoring and verification.
+            Downloads run one after another and are checked automatically.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          {completedCount > 0 && (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleClearCompleted}
-              className="flex items-center gap-1.5"
-            >
-              <TrashIcon size={14} />
-              <span>Clear completed ({completedCount})</span>
-            </Button>
-          )}
+        <div className="flex items-center gap-2 flex-none">
+          {isAnyDownloading || isAnyPaused ? (
+            isAnyPaused && !isAnyDownloading ? (
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={resumeAll}
+                className="flex items-center gap-2 font-medium"
+              >
+                <PlayIcon size={14} />
+                <span>Resume all</span>
+              </Button>
+            ) : (
+              <Button
+                variant="secondary"
+                size="md"
+                onClick={pauseAll}
+                className="flex items-center gap-2 font-medium"
+              >
+                <PauseIcon size={14} />
+                <span>Pause all</span>
+              </Button>
+            )
+          ) : null}
+
+          <Button
+            variant="ghost"
+            size="md"
+            disabled={doneCount === 0}
+            onClick={clearCompleted}
+            className="flex items-center gap-1.5 text-foreground-muted hover:text-foreground disabled:opacity-30"
+          >
+            <span>Clear completed</span>
+          </Button>
         </div>
       </div>
 
-      {/* Queue Body */}
-      {items.length === 0 ? (
-        <Card className="p-12 bg-card border-border-strong flex flex-col items-center justify-center text-center gap-4 my-auto shadow-sm">
-          <div className="w-16 h-16 rounded-2xl bg-surface border border-border flex items-center justify-center text-foreground-muted">
+      {/* Overview Strip Card */}
+      <Card className="p-4 sm:p-5 rounded-[18px] bg-card border-border-strong flex items-center justify-between shadow-sm">
+        {/* Left: 3 Stats Columns */}
+        <div className="grid grid-cols-3 gap-6 sm:gap-10">
+          <div className="flex flex-col">
+            <span className="text-[11px] font-semibold text-foreground-muted tracking-wider select-none mb-1">
+              Speed
+            </span>
+            <span className="font-display font-bold text-xl sm:text-2xl text-foreground font-mono">
+              {overallSpeedFormatted}
+            </span>
+          </div>
+
+          <div className="flex flex-col">
+            <span className="text-[11px] font-semibold text-foreground-muted tracking-wider select-none mb-1">
+              Time left
+            </span>
+            <span className="font-display font-bold text-xl sm:text-2xl text-foreground font-mono">
+              {overallEtaFormatted}
+            </span>
+          </div>
+
+          <div className="flex flex-col">
+            <span className="text-[11px] font-semibold text-foreground-muted tracking-wider select-none mb-1">
+              Waiting
+            </span>
+            <span className="font-display font-bold text-xl sm:text-2xl text-foreground font-mono">
+              {waitingCount} {waitingCount === 1 ? 'item' : 'items'}
+            </span>
+          </div>
+        </div>
+
+        {/* Right: Real-time SVG Sparkline */}
+        <div className="flex-none hidden sm:block">
+          <Sparkline samples={speedHistory} width={190} height={52} />
+        </div>
+      </Card>
+
+      {/* Filter Tabs */}
+      <FilterTabs
+        activeTab={activeFilter}
+        counts={{
+          all: totalCardCount,
+          downloading: activeCount,
+          waiting: waitingCount,
+          done: doneCount,
+          failed: failedCount
+        }}
+        onSelect={handleSelectFilter}
+      />
+
+      {/* Queue Body List */}
+      {filteredCards.length === 0 ? (
+        <Card className="p-12 rounded-[18px] bg-card border-border-strong flex flex-col items-center justify-center text-center gap-4 my-auto shadow-sm">
+          <div className="w-16 h-16 rounded-[14px] bg-surface border border-border flex items-center justify-center text-foreground-muted">
             <QueueIcon size={32} />
           </div>
           <div className="flex flex-col gap-1">
             <h3 className="font-display font-semibold text-lg text-foreground">
-              Your download queue is empty
+              Nothing in the queue
             </h3>
             <p className="text-foreground-muted text-xs max-w-md leading-relaxed">
-              When you clip videos or add downloads from YouTube, Instagram, or Facebook, they will appear here and process sequentially with high-speed fragments.
+              When you clip videos or download YouTube playlists, they will appear here and process sequentially with high-speed fragments.
             </p>
           </div>
           <Button
@@ -226,334 +331,107 @@ export const QueueRoute: React.FC = () => {
             className="flex items-center gap-2 mt-2 shadow-md hover:scale-[1.02] transition-transform"
           >
             <ScissorsIcon size={16} />
-            <span>Clip a video</span>
+            <span>Go to Download</span>
           </Button>
         </Card>
       ) : (
-        <div className="flex flex-col gap-3.5">
-          {items.map((item, index) => {
-            const isDownloading = item.status === 'downloading';
-            const isQueued = item.status === 'queued';
-            const isPaused = item.status === 'paused';
-            const isCompleted = item.status === 'completed';
-            const isWarning = item.status === 'warning';
-            const isFailed = item.status === 'failed';
-            const clipDurationSec = Math.max(0, item.endSec - item.startSec);
-
-            return (
-              <Card
-                key={item.id}
-                className="p-4 sm:p-5 bg-card border-border-strong flex flex-col gap-4 shadow-sm hover:border-border-muted transition-all rounded-[16px]"
-              >
-                {/* Top Row: Thumbnail + Details + Status Badge */}
-                <div className="flex items-start gap-4">
-                  {/* Visual Thumbnail */}
-                  <div className="relative w-28 sm:w-36 h-18 sm:h-20 rounded-[10px] overflow-hidden bg-surface flex-none border border-border-subtle shadow-sm group">
-                    {item.thumbnail ? (
-                      <img
-                        src={item.thumbnail}
-                        alt={item.title}
-                        className="w-full h-full object-cover"
-                        onError={(e) => {
-                          // Hide broken image and fallback to placeholder
-                          (e.target as HTMLElement).style.display = 'none';
-                        }}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-surface to-surface-elevated text-foreground-muted">
-                        <DownloadIcon size={24} className="opacity-40" />
-                      </div>
-                    )}
-
-                    {/* Duration badge overlay */}
-                    <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-[4px] bg-black/80 backdrop-blur-sm text-[10px] font-mono text-white font-semibold select-none shadow">
-                      {item.isFullVideo
-                        ? secondsToMs(item.duration || item.endSec)
-                        : secondsToMs(clipDurationSec)}
-                    </div>
-
-                    {/* Platform icon chip overlay */}
-                    <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded-full bg-black/60 backdrop-blur-sm flex items-center justify-center shadow">
-                      {getPlatformIcon(item.platform)}
-                    </div>
-                  </div>
-
-                  {/* Title and Metadata */}
-                  <div className="flex-1 min-w-0 flex flex-col gap-1.5">
-                    {/* Metadata tags */}
-                    <div className="flex items-center flex-wrap gap-2">
-                      <span className="px-2 py-0.5 rounded-full bg-surface border border-border flex items-center gap-1.5 text-[11px] font-semibold text-foreground-subtle capitalize">
-                        {getPlatformIcon(item.platform)}
-                        <span>{item.platform}</span>
-                      </span>
-
-                      <span className="px-2 py-0.5 rounded-[6px] bg-surface text-foreground-subtle text-[11px] font-mono font-medium border border-border-subtle">
-                        {item.format} · {item.quality}
-                      </span>
-
-                      {item.isFullVideo ? (
-                        <span className="px-2 py-0.5 rounded-full bg-surface text-foreground-muted text-[11px] font-medium border border-border-subtle">
-                          Full video
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 rounded-full bg-[var(--accent-tint)] text-[var(--accent-tint-text)] text-[11px] font-mono font-semibold border border-accent/20 flex items-center gap-1">
-                          <ScissorsIcon size={11} />
-                          <span>{secondsToMs(item.startSec)} → {secondsToMs(item.endSec)} ({clipDurationSec}s)</span>
-                        </span>
-                      )}
-
-                      {item.frameAccurate && !item.isFullVideo && (
-                        <span className="px-2 py-0.5 rounded-[6px] bg-surface text-foreground-muted text-[10px] font-mono border border-border-subtle">
-                          Frame-accurate
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Video Title */}
-                    <h3
-                      className="font-display font-semibold text-sm sm:text-base text-foreground truncate select-text"
-                      title={item.title}
-                    >
-                      {item.title}
-                    </h3>
-
-                    {/* Save Path */}
-                    <div className="flex items-center gap-1.5 text-[11px] font-mono text-foreground-muted truncate select-text">
-                      <FolderIcon size={12} className="flex-none opacity-60" />
-                      <span className="truncate">{item.finalPath || item.saveFolder}</span>
-                    </div>
-                  </div>
-
-                  {/* Status Badge (Right) */}
-                  <div className="flex items-center gap-2 flex-none">
-                    {isDownloading && (
-                      <span className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/15 border border-accent/30 text-accent text-xs font-semibold shadow-[0_0_12px_rgba(255,91,74,0.2)] animate-pulse">
-                        <span className="w-2 h-2 rounded-full bg-accent animate-ping" />
-                        <span>Downloading {item.progress}%</span>
-                      </span>
-                    )}
-
-                    {isQueued && (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-surface border border-border text-foreground-subtle text-xs font-medium">
-                        <span className="w-1.5 h-1.5 rounded-full bg-foreground-muted" />
-                        <span>Queued · #{index + 1} in line</span>
-                      </span>
-                    )}
-
-                    {isPaused && (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#2A2318] text-[#F5A623] border border-[#F5A623]/25 text-xs font-semibold">
-                        <PauseIcon size={12} />
-                        <span>Paused</span>
-                      </span>
-                    )}
-
-                    {isCompleted && (
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#182A20] text-[#3DDC97] border border-[#3DDC97]/25 text-xs font-semibold">
-                        <CheckIcon size={12} strokeWidth={2.5} />
-                        <span>Completed</span>
-                      </span>
-                    )}
-
-                    {isWarning && (
-                      <span
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#2A2318] text-[#F5A623] border border-[#F5A623]/25 text-xs font-semibold"
-                        title={item.warning}
-                      >
-                        <span>Warning</span>
-                      </span>
-                    )}
-
-                    {isFailed && (
-                      <span
-                        className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#2A1819] text-[#E5484D] border border-[#E5484D]/25 text-xs font-semibold"
-                        title={item.error}
-                      >
-                        <span>Failed</span>
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Modern Glowing Download Progress Bar */}
-                {(isDownloading || isPaused || isQueued) && (
-                  <div className="flex flex-col gap-2 pt-1">
-                    {/* The Track */}
-                    <div className="w-full h-2.5 rounded-full bg-[#0A0B0E] border border-border-subtle p-0.5 overflow-hidden shadow-inner relative">
-                      {isQueued ? (
-                        <div className="h-full w-full rounded-full bg-surface relative overflow-hidden">
-                          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-accent/30 to-transparent animate-pulse" />
-                        </div>
-                      ) : (
-                        <div
-                          className={`h-full rounded-full transition-all duration-300 relative ${
-                            isPaused
-                              ? 'bg-gradient-to-r from-[#F5A623] to-[#F7BA55]'
-                              : 'bg-gradient-to-r from-accent via-[#FF7B6E] to-[#FFA07A] shadow-[0_0_12px_rgba(255,91,74,0.4)]'
-                          }`}
-                          style={{ width: `${Math.max(item.progress, 2)}%` }}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragEnd={handleDragEnd}
+        >
+          <SortableContext
+            items={filteredCards.map((c) => (c.type === 'group' ? c.group.id : c.item.id))}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="flex flex-col gap-3.5 pb-8">
+              {filteredCards.map((card, idx) => {
+                if (card.type === 'group') {
+                  return (
+                    <SortableCardWrapper key={card.group.id} id={card.group.id}>
+                      {() => (
+                        <PlaylistGroupCard
+                          group={card.group}
+                          childrenItems={card.children}
+                          onPauseGroup={pauseItem}
+                          onResumeGroup={resumeItem}
+                          onCancelGroup={cancelItem}
                         />
                       )}
-                    </div>
+                    </SortableCardWrapper>
+                  );
+                }
 
-                    {/* Progress Metrics Row */}
-                    <div className="flex items-center justify-between text-xs font-mono text-foreground-muted px-0.5">
-                      <div className="flex items-center gap-2">
-                        {isDownloading ? (
-                          item.downloadedBytes > 0 ? (
-                            <span className="text-foreground-subtle font-medium">
-                              {formatBytes(item.downloadedBytes)} / {formatBytes(item.totalBytes)}
-                            </span>
-                          ) : (
-                            <span>Starting fragments...</span>
-                          )
-                        ) : isPaused ? (
-                          <span>Download paused ({formatBytes(item.downloadedBytes)} saved)</span>
-                        ) : (
-                          <span>Waiting in queue...</span>
-                        )}
-                      </div>
+                const item = card.item;
+                const isDownloading = item.status === 'downloading';
+                const isWaiting = item.status === 'waiting' || item.status === 'paused';
+                const isDone = item.status === 'done';
+                const isFailed = item.status === 'failed';
 
-                      <div className="flex items-center gap-3">
-                        {isDownloading && (
-                          <span className="font-bold text-accent">
-                            {item.progress}%
-                          </span>
-                        )}
+                if (isDownloading) {
+                  return (
+                    <SortableCardWrapper key={item.id} id={item.id}>
+                      {() => (
+                        <ActiveItemCard
+                          item={item}
+                          onPause={pauseItem}
+                          onResume={resumeItem}
+                          onCancel={cancelItem}
+                        />
+                      )}
+                    </SortableCardWrapper>
+                  );
+                }
 
-                        {isDownloading && item.speed && item.speed !== '—' && (
-                          <span className="text-foreground-subtle">
-                            ⚡ {item.speed}
-                          </span>
-                        )}
+                if (isWaiting) {
+                  return (
+                    <SortableCardWrapper key={item.id} id={item.id}>
+                      {(dragHandleProps) => (
+                        <WaitingCard
+                          item={item}
+                          queueIndex={idx}
+                          onStartNow={startNow}
+                          onRemove={removeItem}
+                          dragHandleProps={dragHandleProps}
+                        />
+                      )}
+                    </SortableCardWrapper>
+                  );
+                }
 
-                        {isDownloading && item.eta && item.eta !== '—' && (
-                          <span className="text-foreground-muted">
-                            ETA {item.eta}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                )}
+                if (isDone) {
+                  return (
+                    <SortableCardWrapper key={item.id} id={item.id}>
+                      {() => (
+                        <DoneCard
+                          item={item}
+                          onShowInFolder={handleShowInFolder}
+                          onPlay={handleOpenFile}
+                        />
+                      )}
+                    </SortableCardWrapper>
+                  );
+                }
 
-                {/* Warning details banner */}
-                {isWarning && item.warning && (
-                  <div className="text-xs text-[#F5A623] bg-[#2A2318]/60 p-3 rounded-[10px] border border-[#F5A623]/30">
-                    <span className="font-semibold">Note:</span> {item.warning}
-                  </div>
-                )}
+                if (isFailed) {
+                  return (
+                    <SortableCardWrapper key={item.id} id={item.id}>
+                      {() => (
+                        <FailedCard
+                          item={item}
+                          onRetry={retryItem}
+                          onRemove={removeItem}
+                        />
+                      )}
+                    </SortableCardWrapper>
+                  );
+                }
 
-                {/* Error details banner */}
-                {isFailed && item.error && (
-                  <div className="text-xs text-[#E5484D] bg-[#2A1819]/60 p-3 rounded-[10px] border border-[#E5484D]/30 line-clamp-3">
-                    <span className="font-semibold">Error:</span> {item.error}
-                  </div>
-                )}
-
-                {/* Bottom Action Controls */}
-                <div className="flex items-center justify-between pt-2.5 border-t border-border-subtle">
-                  <div className="text-[11px] text-foreground-muted">
-                    {new Date(item.addedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {isDownloading && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handlePauseItem(item.id)}
-                        className="flex items-center gap-1.5"
-                      >
-                        <PauseIcon size={13} />
-                        <span>Pause</span>
-                      </Button>
-                    )}
-
-                    {isPaused && (
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => handleResumeItem(item.id)}
-                        className="flex items-center gap-1.5 text-accent hover:border-accent"
-                      >
-                        <PlayIcon size={13} />
-                        <span>Resume</span>
-                      </Button>
-                    )}
-
-                    {(isDownloading || isQueued || isPaused) && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => handleCancelItem(item.id)}
-                        className="text-foreground-muted hover:text-status-error hover:bg-surface"
-                      >
-                        Cancel
-                      </Button>
-                    )}
-
-                    {(isCompleted || isWarning) && (
-                      <>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleShowInFolder(item.finalPath)}
-                          className="flex items-center gap-1.5"
-                        >
-                          <FolderIcon size={13} />
-                          <span>Show in folder</span>
-                        </Button>
-
-                        <Button
-                          variant="primary"
-                          size="sm"
-                          onClick={() => handleOpenFile(item.finalPath)}
-                          className="flex items-center gap-1.5 shadow-sm"
-                        >
-                          <PlayIcon size={13} />
-                          <span>Play</span>
-                        </Button>
-
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleCancelItem(item.id)}
-                          className="text-foreground-muted hover:text-foreground"
-                          title="Remove from queue"
-                        >
-                          <TrashIcon size={13} />
-                        </Button>
-                      </>
-                    )}
-
-                    {isFailed && (
-                      <>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => handleResumeItem(item.id)}
-                          className="flex items-center gap-1.5 text-accent"
-                        >
-                          <RefreshCwIcon size={13} />
-                          <span>Retry</span>
-                        </Button>
-
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleCancelItem(item.id)}
-                          className="text-foreground-muted hover:text-status-error"
-                        >
-                          Remove
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
-        </div>
+                return null;
+              })}
+            </div>
+          </SortableContext>
+        </DndContext>
       )}
     </div>
   );

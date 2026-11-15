@@ -1,5 +1,6 @@
 import React from 'react';
 import { useNavigation } from '../context/NavigationContext';
+import { useQueue } from '../context/QueueContext';
 import { RouteId } from '../types/routes';
 import {
   ScissorsIcon,
@@ -14,7 +15,8 @@ import {
 import { StatusPill } from './Badge';
 
 export const Sidebar: React.FC = () => {
-  const { currentRoute, navigate, queueCount, status } = useNavigation();
+  const { currentRoute, navigate, status } = useNavigation();
+  const { allUnfinishedCount } = useQueue();
 
   interface NavItem {
     id: RouteId;
@@ -34,7 +36,7 @@ export const Sidebar: React.FC = () => {
   ];
 
   const secondaryItems: NavItem[] = [
-    { id: 'queue', label: 'Queue', icon: QueueIcon, badge: queueCount },
+    { id: 'queue', label: 'Queue', icon: QueueIcon, badge: allUnfinishedCount },
     { id: 'history', label: 'History', icon: HistoryIcon },
     { id: 'settings', label: 'Settings', icon: SettingsIcon }
   ];
@@ -71,7 +73,7 @@ export const Sidebar: React.FC = () => {
   };
 
   return (
-    <aside className="w-[195px] flex-none box-border p-6 px-3.5 bg-sidebar border-r border-border-subtle flex flex-col gap-5 select-none h-full">
+    <aside className="w-[220px] flex-none box-border p-6 px-4 bg-sidebar border-r border-border-subtle flex flex-col gap-5 select-none h-full">
       {/* Brand Header */}
       <div
         className="flex items-center gap-3 px-2 mb-2 cursor-pointer active:scale-95 transition-transform"

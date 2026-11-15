@@ -11,6 +11,8 @@ import { ChaptersPopover, Chapter } from '../components/ChaptersPopover';
 import { WrongPlatformBanner, PlaylistNoticeBanner } from '../components/WrongPlatformBanner';
 import { secondsToHms, secondsToMs, hmsToSeconds, formatHumanDuration } from '../utils/time';
 import { sanitizeFilename } from '../utils/filename';
+import { PlaylistView } from '../components/playlist/PlaylistView';
+import { PlaylistInfo, QueueGroup, QueueItem } from '../../../shared/types';
 import {
   PlayIcon,
   PauseIcon,
@@ -80,6 +82,13 @@ export const YouTubeRoute: React.FC = () => {
 
   // Dropdown states
   const [isQualityDropdownOpen, setIsQualityDropdownOpen] = useState(false);
+
+  // Playlist Mode States
+  const [activeSubTab, setActiveSubTab] = useState<'video' | 'playlist'>('video');
+  const [playlistUrl, setPlaylistUrl] = useState('');
+  const [playlistInfo, setPlaylistInfo] = useState<PlaylistInfo | null>(null);
+  const [isPlaylistLoading, setIsPlaylistLoading] = useState(false);
+  const [playlistError, setPlaylistError] = useState<string | null>(null);
 
   const isVideoLoaded = Boolean(videoInfo);
   const totalDuration = videoInfo ? videoInfo.duration : 0;
@@ -210,7 +219,7 @@ export const YouTubeRoute: React.FC = () => {
     }
   };
 
-  const handleUrlChange = (url: string) => {
+  const handleUrlChange = async (url: string) => {
     setCurrentUrl(url);
     const trimmed = url.trim();
 
@@ -222,10 +231,44 @@ export const YouTubeRoute: React.FC = () => {
       setWrongPlatform(null);
     }
 
+    if (window.api?.detectPlaylist) {
+      try {
+        const det = await window.api.detectPlaylist(trimmed);
+        if (det.isPlaylist) {
+          setActiveSubTab('playlist');
+          setPlaylistUrl(trimmed);
+          return;
+        }
+      } catch {}
+    }
+
     if (trimmed.includes('list=') || trimmed.includes('playlist?')) {
       setShowPlaylistNotice(true);
     } else {
       setShowPlaylistNotice(false);
+    }
+  };
+
+  const handleFetchPlaylist = async (urlToFetch?: string) => {
+    const target = (urlToFetch || playlistUrl || currentUrl).trim();
+    if (!target) {
+      showToast('Please enter a YouTube playlist URL', 'info');
+      return;
+    }
+    setPlaylistUrl(target);
+    setIsPlaylistLoading(true);
+    setPlaylistError(null);
+    try {
+      if (window.api?.fetchPlaylist) {
+        const info = await window.api.fetchPlaylist(target);
+        setPlaylistInfo(info);
+        showToast(`Playlist found: ${info.title} (${info.count} videos)`, 'success');
+      }
+    } catch (e: any) {
+      setPlaylistError(e.message || 'Failed to fetch playlist');
+      showToast(e.message || 'Failed to fetch playlist', 'error');
+    } finally {
+      setIsPlaylistLoading(false);
     }
   };
 
@@ -528,26 +571,61 @@ export const YouTubeRoute: React.FC = () => {
 
   const handleAddAllChapters = async (chapters: Chapter[]) => {
     if (!videoInfo) return;
-    for (const ch of chapters) {
-      const item = {
-        id: Math.random().toString(36).substring(2, 9),
-        title: `${videoInfo.title} - ${ch.title}`,
+    const groupId = Math.random().toString(36).substring(2, 9);
+
+    const children: QueueItem[] = chapters.map((ch, idx) => {
+      const childId = Math.random().toString(36).substring(2, 9);
+      return {
+        id: childId,
+        platform: 'youtube',
         url: currentUrl,
-        platform: 'youtube' as const,
-        format: selectedFormat,
+        title: `${videoInfo.title} - ${ch.title}`,
+        thumbnailUrl: videoInfo.thumbnail,
+        durationSec: Math.max(1, ch.end_time - ch.start_time),
+        format: selectedFormat.toLowerCase() as any,
         quality: selectedResolution,
-        startSec: ch.start_time,
-        endSec: ch.end_time,
-        isFullVideo: false,
-        frameAccurate,
-        saveFolder,
-        fileName: sanitizeFilename(`${videoInfo.title}_${ch.title}`, 60)
+        mode: mediaType,
+        clip: { startSec: ch.start_time, endSec: ch.end_time },
+        outputDir: saveFolder,
+        fileName: sanitizeFilename(`${videoInfo.title}_${ch.title}`, 60),
+        status: 'waiting',
+        progress: {
+          percent: 0,
+          downloadedBytes: 0,
+          totalBytes: 0,
+          speedBps: 0,
+          speed: '—',
+          etaSec: 0,
+          eta: '—'
+        },
+        attempts: 0,
+        groupId,
+        indexInGroup: idx + 1,
+        addedAt: Date.now(),
+        frameAccurate
       };
-      if (window.api && window.api.addToQueue) {
-        await window.api.addToQueue(item);
-      }
+    });
+
+    const group: QueueGroup = {
+      id: groupId,
+      kind: 'chapters',
+      title: `${videoInfo.title} (Chapters)`,
+      channel: videoInfo.uploader,
+      sourceUrl: currentUrl,
+      thumbnailUrl: videoInfo.thumbnail,
+      childIds: children.map((c) => c.id),
+      options: {
+        format: selectedFormat.toLowerCase() as any,
+        quality: selectedResolution,
+        mode: mediaType
+      },
+      createdAt: Date.now()
+    };
+
+    if (window.api?.addGroupToQueue) {
+      await window.api.addGroupToQueue(group, children);
+      showToast(`Added ${chapters.length} chapter clips to queue`, 'success');
     }
-    showToast(`Added ${chapters.length} chapter clips to queue`, 'success');
   };
 
   // Add to Queue handler
@@ -609,16 +687,94 @@ export const YouTubeRoute: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col gap-3.5 p-5 overflow-y-auto max-w-[1300px] mx-auto w-full box-border">
-      {/* Top URL Bar */}
-      <UrlBar
-        platform="YouTube"
-        initialUrl={currentUrl}
-        onFetch={(url) => {
-          handleUrlChange(url);
-          handleFetchInfo(url);
-        }}
-        isLoading={isLoading}
-      />
+      {/* Top Video | Playlist Segmented Bar */}
+      <div className="flex items-center justify-between pb-1 select-none">
+        <SegmentedToggle
+          value={activeSubTab}
+          onChange={(val) => {
+            setActiveSubTab(val as 'video' | 'playlist');
+            if (val === 'playlist' && !playlistUrl && currentUrl) {
+              setPlaylistUrl(currentUrl);
+            }
+          }}
+          options={[
+            { value: 'video', label: 'Video' },
+            { value: 'playlist', label: 'Playlist' }
+          ]}
+        />
+        <span className="text-xs text-foreground-muted hidden sm:inline">
+          Links with a playlist id open this tab automatically.
+        </span>
+      </div>
+
+      {activeSubTab === 'playlist' ? (
+        <div className="flex flex-col gap-4">
+          <UrlBar
+            platform="YouTube"
+            initialUrl={playlistUrl || currentUrl}
+            onFetch={(url) => {
+              setPlaylistUrl(url);
+              handleFetchPlaylist(url);
+            }}
+            isLoading={isPlaylistLoading}
+          />
+
+          {isPlaylistLoading && (
+            <Card className="p-12 rounded-[18px] bg-card border-border-strong flex flex-col items-center justify-center gap-3">
+              <div className="w-8 h-8 border-3 border-accent border-t-transparent rounded-full animate-spin" />
+              <span className="text-xs font-medium text-foreground-muted">
+                Fetching playlist metadata...
+              </span>
+            </Card>
+          )}
+
+          {playlistError && (
+            <Card className="p-4 rounded-[18px] bg-card border-status-danger/30 flex items-center justify-between">
+              <span className="text-xs text-status-danger font-medium">{playlistError}</span>
+              <Button size="sm" variant="secondary" onClick={() => handleFetchPlaylist()}>
+                Retry
+              </Button>
+            </Card>
+          )}
+
+          {playlistInfo && !isPlaylistLoading && (
+            <PlaylistView
+              playlistInfo={playlistInfo}
+              playlistUrl={playlistUrl}
+              defaultSaveFolder={saveFolder}
+            />
+          )}
+
+          {!playlistInfo && !isPlaylistLoading && !playlistError && (
+            <Card className="p-12 rounded-[18px] bg-card border-border-strong flex flex-col items-center justify-center text-center gap-3">
+              <div className="w-14 h-14 rounded-[14px] bg-surface flex items-center justify-center text-foreground-muted">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                  <polyline points="2 17 12 22 22 17" />
+                  <polyline points="2 12 12 17 22 12" />
+                </svg>
+              </div>
+              <h3 className="font-display font-semibold text-base text-foreground">
+                Paste a YouTube playlist URL
+              </h3>
+              <p className="text-foreground-muted text-xs max-w-sm">
+                Enter any public or unlisted YouTube playlist link above to inspect videos, customize quality, and download in bulk.
+              </p>
+            </Card>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3.5">
+          {/* Top URL Bar */}
+          <UrlBar
+            platform="YouTube"
+            initialUrl={currentUrl}
+            onFetch={(url) => {
+              handleUrlChange(url);
+              handleFetchInfo(url);
+            }}
+            isLoading={isLoading}
+          />
 
       {/* Wrong Platform Banner */}
       {wrongPlatform && (
@@ -1306,6 +1462,8 @@ export const YouTubeRoute: React.FC = () => {
           </div>
         </div>
       </div>
+      </div>
+      )}
     </div>
   );
 };

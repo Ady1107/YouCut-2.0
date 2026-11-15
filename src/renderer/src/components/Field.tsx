@@ -1,6 +1,6 @@
 import React from 'react';
 
-export interface FieldProps extends React.InputHTMLAttributes<HTMLInputElement> {
+export interface FieldProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'prefix'> {
   label?: string;
   suffix?: React.ReactNode;
   prefix?: React.ReactNode;

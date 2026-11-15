@@ -3,8 +3,11 @@ import { join } from 'path';
 import fs from 'fs';
 import { exec, execFile } from 'child_process';
 import { getYouCutHome, getBinaryPath, getDefaultDownloadsDir } from './config/paths';
+import { settingsManager } from './config/settings';
+import { updatesManager, ToolId } from './config/updates';
 import { queueManager } from './download/queue';
 import { historyStore } from './download/history';
+import { detectPlaylistUrl, fetchPlaylistInfo } from './download/playlist';
 
 const isDev = !app.isPackaged;
 
@@ -77,11 +80,15 @@ function cleanupAllProcesses() {
 }
 
 function createWindow(): void {
+  const isFixture =
+    process.env.YOUCUT_FIXTURE === 'settings-design' ||
+    process.argv.includes('--fixture=settings-design');
+
   mainWindow = new BrowserWindow({
-    width: 1176,
-    height: 784,
-    minWidth: 1024,
-    minHeight: 700,
+    width: isFixture ? 1440 : 1176,
+    height: isFixture ? 1100 : 784,
+    minWidth: 1040,
+    minHeight: 720,
     show: false,
     autoHideMenuBar: true,
     backgroundColor: '#0B0C10',
@@ -163,12 +170,23 @@ ipcMain.handle('clipboard:write', (_event, text: string) => {
 
 // Queue IPC Handlers
 ipcMain.handle('queue:add', (_event, item) => queueManager.addItem(item));
-ipcMain.handle('queue:list', () => queueManager.getItems());
+ipcMain.handle('queue:add-group', (_event, group, children) => queueManager.addGroup(group, children));
+ipcMain.handle('queue:list', () => queueManager.getQueueStatePayload());
 ipcMain.handle('queue:pause', (_event, id: string) => queueManager.pauseItem(id));
 ipcMain.handle('queue:resume', (_event, id: string) => queueManager.resumeItem(id));
 ipcMain.handle('queue:cancel', (_event, id: string) => queueManager.cancelItem(id));
+ipcMain.handle('queue:retry', (_event, id: string) => queueManager.retry(id));
+ipcMain.handle('queue:remove', (_event, id: string) => queueManager.remove(id));
+ipcMain.handle('queue:reorder', (_event, order: string[]) => queueManager.reorder(order));
+ipcMain.handle('queue:start-now', (_event, id: string) => queueManager.startNow(id));
+ipcMain.handle('queue:pause-all', () => queueManager.pauseAll());
+ipcMain.handle('queue:resume-all', () => queueManager.resumeAll());
 ipcMain.handle('queue:clear-completed', () => queueManager.clearCompleted());
-ipcMain.handle('queue:set-concurrency', (_event, n: number) => queueManager.setConcurrentFragments(n));
+ipcMain.handle('queue:set-concurrency', (_event, n: number) => queueManager.setMaxConcurrency(n));
+
+// Playlist IPC Handlers
+ipcMain.handle('playlist:detect', (_event, url: string) => detectPlaylistUrl(url));
+ipcMain.handle('playlist:fetch', (_event, url: string) => fetchPlaylistInfo(url));
 
 // History IPC Handlers
 ipcMain.handle('history:list', () => historyStore.getAll());
@@ -206,6 +224,115 @@ ipcMain.handle('dialog:open-directory', async (_event, defaultPath?: string) => 
 
 ipcMain.handle('downloads:get-default', (_event, platform: string) => {
   return getDefaultDownloadsDir(platform || 'YouTube');
+});
+
+// Settings IPC Handlers
+ipcMain.handle('settings:get', () => settingsManager.getSettings());
+ipcMain.handle('settings:patch', (_event, partial) => settingsManager.patchSettings(partial));
+
+// Updates IPC Handlers
+ipcMain.handle('updates:getState', () => updatesManager.getState());
+ipcMain.handle('updates:check', (_event, tool: 'all' | ToolId) => updatesManager.checkUpdates(tool));
+ipcMain.handle('updates:apply', (_event, tool: ToolId) => updatesManager.applyUpdate(tool));
+ipcMain.handle('updates:cancel', (_event, tool: ToolId) => updatesManager.cancelUpdate(tool));
+
+// Cookies & Diagnostics Handlers
+ipcMain.handle('cookies:check-browser', async (_event, browser: string) => {
+  if (!browser || browser.toLowerCase() === 'none') {
+    return '';
+  }
+  const bLower = browser.toLowerCase();
+  const ytdlpPath = getBinaryPath('yt-dlp');
+  if (!fs.existsSync(ytdlpPath)) {
+    return 'yt-dlp binary missing';
+  }
+
+  return new Promise((resolve) => {
+    execFile(
+      ytdlpPath,
+      ['--cookies-from-browser', bLower, '--simulate', '--no-warnings', 'https://www.youtube.com'],
+      { timeout: 8000 },
+      (err, _stdout, stderr) => {
+        if (!err) {
+          resolve('Cookies can be read');
+          return;
+        }
+        const errLower = (stderr || err.message || '').toLowerCase();
+        if (
+          errLower.includes('could not copy') ||
+          errLower.includes('cookie database') ||
+          errLower.includes('lock')
+        ) {
+          resolve(
+            `${browser} may block access while it is open: close it or use a cookies.txt file`
+          );
+        } else if (errLower.includes('not found') || errLower.includes('no profile')) {
+          resolve(`No ${browser} profile found`);
+        } else {
+          resolve(`Could not read cookies from ${browser}`);
+        }
+      }
+    );
+  });
+});
+
+ipcMain.handle('cookies:browse-file', async () => {
+  if (!mainWindow) return null;
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select cookies.txt',
+    filters: [{ name: 'Text files (*.txt)', extensions: ['txt'] }],
+    properties: ['openFile']
+  });
+  if (!res.canceled && res.filePaths && res.filePaths.length > 0) {
+    return res.filePaths[0];
+  }
+  return null;
+});
+
+ipcMain.handle('cookies:validate-file', (_event, filePath: string) => {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return { valid: false, error: 'File not found' };
+  }
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    const lines = content.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
+    const hasHeader = lines.some((l) => l.includes('# Netscape HTTP Cookie File'));
+    const hasValidFields = lines.some((l) => !l.startsWith('#') && l.split('\t').length >= 7);
+    if (hasHeader || hasValidFields) {
+      return { valid: true };
+    }
+    return { valid: false, error: 'Invalid Netscape cookie format' };
+  } catch {
+    return { valid: false, error: 'Could not read file' };
+  }
+});
+
+ipcMain.handle('diagnostics:get', () => {
+  const settings = settingsManager.getSettings();
+  const diagnostics = {
+    app: 'YouCut v2.0',
+    platform: process.platform,
+    arch: process.arch,
+    binaries: {
+      ytdlp: '2026.10.26',
+      ffmpeg: 'N-127579-g5cb9fcd211-20261016',
+      ffprobe: '7.1'
+    },
+    settings: {
+      appearance: settings.appearance,
+      downloads: {
+        ...settings.downloads,
+        defaultFolder: settings.downloads.defaultFolder ? '<redacted_path>' : ''
+      },
+      cookies: {
+        browser: settings.cookies.browser,
+        file: settings.cookies.file ? '<redacted_cookie_path>' : null
+      },
+      updates: settings.updates
+    },
+    timestamp: new Date().toISOString()
+  };
+  return JSON.stringify(diagnostics, null, 2);
 });
 
 function formatDuration(seconds: number): string {

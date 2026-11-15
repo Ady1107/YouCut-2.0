@@ -1,47 +1,59 @@
 :root {
-  /* Surface & Background Colors (Dark Default) */
+  /* Surface & Background Colors (Dark Default from images) */
   --bg-app: #0B0C10;
   --bg-sidebar: #0F1116;
   --bg-card: #14161D;
+  --bg-inset: #0F1116;
   --bg-surface: #1B1E27;
   --bg-surface-hover: #242834;
   --bg-surface-active: #2A2E3B;
+  --divider: #1E212B;
 
-  /* Borders */
+  /* Borders & Progress */
   --border-default: #232733;
   --border-subtle: #1E212B;
   --border-strong: #2A2E3B;
   --border-muted: #3A3F4E;
-  --border-gray: #6B7285;
+  --progress-track: #2A2E3B;
 
   /* Typography Colors */
   --text-primary: #F3F4F7;
   --text-muted: #9BA1B0;
-  --text-subtle: #C6CAD5;
+  --text-subtle: #6B7285;
+  --text-chip: #C6CAD5;
+  --bg-chip: #1B1E27;
   --text-dark: #1A0805;
 
-  /* Accents & Platform Tinting */
+  /* Accents */
   --accent-primary: #FF5B4A;
   --accent-hover: #FF4532;
   --accent-tint: #2A1B19;
   --accent-tint-text: #FF8C7E;
+  --on-accent: #1A0805;
 
+  /* Platforms */
   --accent-youtube: #FF5B4A;
   --accent-youtube-tint: #2A1B19;
   --accent-youtube-tint-text: #FF8C7E;
-
   --accent-instagram: #E1306C;
   --accent-instagram-tint: #2B1A26;
   --accent-instagram-tint-text: #F28BB8;
-
   --accent-facebook: #1877F2;
   --accent-facebook-tint: #17233D;
   --accent-facebook-tint-text: #8DB4FF;
 
   /* Status Colors */
   --status-success: #3DDC97;
+  --status-success-tint: #12261D;
   --status-warning: #F5A623;
-  --status-error: #E5484D;
+  --status-warning-tint: #2A2318;
+  --status-danger: #FF6B6B;
+  --status-danger-tint: #2A1517;
+
+  /* Sparkline & Progress Glow */
+  --sparkline-line: #FF5B4A;
+  --sparkline-fill: rgba(255, 91, 74, 0.14);
+  --progress-glow: 0 0 16px rgba(255, 91, 74, 0.35);
 
   /* Timeline & Ruler */
   --ticks-color: #4A5062;
@@ -59,66 +71,80 @@
 /* Light Theme Variables */
 html[data-theme="light"],
 body.light {
-  --bg-app: #F3F4F6;
+  --bg-app: #F5F6F9;
   --bg-sidebar: #FFFFFF;
   --bg-card: #FFFFFF;
-  --bg-surface: #F3F4F6;
-  --bg-surface-hover: #E5E7EB;
-  --bg-surface-active: #D1D5DB;
+  --bg-inset: #F0F2F6;
+  --bg-surface: #EEF0F5;
+  --bg-surface-hover: #E3E6EE;
+  --bg-surface-active: #CDD2DE;
+  --divider: #E8EAF0;
 
-  --border-default: #E5E7EB;
-  --border-subtle: #E5E7EB;
-  --border-strong: #D1D5DB;
-  --border-muted: #9CA3AF;
-  --border-gray: #9CA3AF;
+  --border-default: #E3E6EE;
+  --border-subtle: #E8EAF0;
+  --border-strong: #CDD2DE;
+  --border-muted: #8A91A3;
+  --progress-track: #E3E6EE;
 
-  --text-primary: #111827;
-  --text-muted: #6B7280;
-  --text-subtle: #374151;
+  --text-primary: #14161D;
+  --text-muted: #5B6272;
+  --text-subtle: #8A91A3;
+  --text-chip: #3A4050;
+  --bg-chip: #EEF0F5;
   --text-dark: #FFFFFF;
 
   --accent-primary: #FF5B4A;
   --accent-hover: #FF4532;
-  --accent-tint: #FEE2E2;
-  --accent-tint-text: #991B1B;
+  --accent-tint: #FFEFEC;
+  --accent-tint-text: #C2331F;
+  --on-accent: #1A0805;
 
   --accent-youtube: #FF5B4A;
-  --accent-youtube-tint: #FEE2E2;
-  --accent-youtube-tint-text: #991B1B;
-
+  --accent-youtube-tint: #FFEFEC;
+  --accent-youtube-tint-text: #C2331F;
   --accent-instagram: #E1306C;
   --accent-instagram-tint: #FCE7F3;
   --accent-instagram-tint-text: #9D174D;
-
   --accent-facebook: #1877F2;
   --accent-facebook-tint: #DBEAFE;
   --accent-facebook-tint-text: #1E40AF;
 
-  --ticks-color: #9CA3AF;
-  --filmstrip-border: #D1D5DB;
+  --status-success: #12A369;
+  --status-success-tint: #E5F7EE;
+  --status-warning: #B45309;
+  --status-warning-tint: #FEF3C7;
+  --status-danger: #D83A3A;
+  --status-danger-tint: #FDECEC;
+
+  --sparkline-line: #FF5B4A;
+  --sparkline-fill: rgba(255, 91, 74, 0.14);
+  --progress-glow: 0 4px 12px rgba(0, 0, 0, 0.08);
+
+  --ticks-color: #8A91A3;
+  --filmstrip-border: #CDD2DE;
 }
 
 /* Light Mode Overrides for UI Elements */
 html[data-theme="light"] body {
-  background-color: #F3F4F6 !important;
-  color: #111827 !important;
+  background-color: #F5F6F9 !important;
+  color: #14161D !important;
 }
 
 html[data-theme="light"] main {
-  background-color: #F3F4F6 !important;
+  background-color: #F5F6F9 !important;
 }
 
 html[data-theme="light"] aside {
   background-color: #FFFFFF !important;
-  border-color: #E5E7EB !important;
+  border-color: #E3E6EE !important;
 }
 
 html[data-theme="light"] .bg-\[\#0B0C10\] {
-  background-color: #F3F4F6 !important;
+  background-color: #F5F6F9 !important;
 }
 
 html[data-theme="light"] .bg-\[\#0F1116\] {
-  background-color: #F9FAFB !important;
+  background-color: #F0F2F6 !important;
 }
 
 html[data-theme="light"] .bg-\[\#14161D\] {
@@ -126,7 +152,7 @@ html[data-theme="light"] .bg-\[\#14161D\] {
 }
 
 html[data-theme="light"] .bg-\[\#1B1E27\] {
-  background-color: #F3F4F6 !important;
+  background-color: #EEF0F5 !important;
 }
 
 html[data-theme="light"] .bg-\[\#12141A\] {
@@ -135,15 +161,15 @@ html[data-theme="light"] .bg-\[\#12141A\] {
 
 html[data-theme="light"] .bg-\[\#0A0B0E\] {
   background-color: #F8F9FA !important;
-  border-color: #E2E8F0 !important;
+  border-color: #E3E6EE !important;
 }
 
 html[data-theme="light"] .bg-\[\#2A1B19\] {
-  background-color: #FEE2E2 !important;
+  background-color: #FFEFEC !important;
 }
 
 html[data-theme="light"] .text-\[\#FF8C7E\] {
-  color: #DC2626 !important;
+  color: #C2331F !important;
 }
 
 html[data-theme="light"] .bg-\[\#2B1A26\] {
@@ -162,12 +188,13 @@ html[data-theme="light"] .text-\[\#8DB4FF\] {
   color: #1D4ED8 !important;
 }
 
-html[data-theme="light"] .bg-\[\#182A20\] {
-  background-color: #DCFCE7 !important;
+html[data-theme="light"] .bg-\[\#182A20\],
+html[data-theme="light"] .bg-\[\#12261D\] {
+  background-color: #E5F7EE !important;
 }
 
 html[data-theme="light"] .text-\[\#3DDC97\] {
-  color: #15803D !important;
+  color: #12A369 !important;
 }
 
 html[data-theme="light"] .bg-\[\#2A2318\] {
@@ -178,42 +205,97 @@ html[data-theme="light"] .text-\[\#F5A623\] {
   color: #B45309 !important;
 }
 
-html[data-theme="light"] .bg-\[\#2A1819\] {
-  background-color: #FEE2E2 !important;
+html[data-theme="light"] .bg-\[\#2A1819\],
+html[data-theme="light"] .bg-\[\#2A1517\] {
+  background-color: #FDECEC !important;
 }
 
-html[data-theme="light"] .text-\[\#E5484D\] {
-  color: #B91C1C !important;
+html[data-theme="light"] .text-\[\#E5484D\],
+html[data-theme="light"] .text-\[\#FF6B6B\] {
+  color: #D83A3A !important;
 }
 
 html[data-theme="light"] .border-border,
 html[data-theme="light"] .border-border-strong,
 html[data-theme="light"] .border-border-subtle {
-  border-color: #E5E7EB !important;
+  border-color: #E3E6EE !important;
 }
 
 html[data-theme="light"] .text-foreground {
-  color: #111827 !important;
+  color: #14161D !important;
 }
 
 html[data-theme="light"] .text-foreground-muted {
-  color: #6B7280 !important;
+  color: #5B6272 !important;
 }
 
 html[data-theme="light"] .text-foreground-subtle {
-  color: #374151 !important;
+  color: #8A91A3 !important;
 }
 
 html[data-theme="light"] input,
 html[data-theme="light"] textarea {
-  color: #111827 !important;
+  color: #14161D !important;
 }
 
 html[data-theme="light"] input::placeholder {
-  color: #9CA3AF !important;
+  color: #8A91A3 !important;
 }
 
-html[data-theme="light"] .shadow-lg,
-html[data-theme="light"] .shadow-xl {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05) !important;
+/* Animations per Section 6 */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+@keyframes sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-3px); }
+  40%, 80% { transform: translateX(3px); }
+}
+
+@keyframes check-pop {
+  0% { transform: scale(0.6); opacity: 0; }
+  70% { transform: scale(1.15); opacity: 1; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes pulse-success {
+  0%, 100% { border-color: var(--border-default); }
+  50% { border-color: var(--status-success); }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.4s infinite linear;
+}
+
+.animate-sweep {
+  animation: sweep 1.6s infinite ease-in-out;
+}
+
+.animate-shake {
+  animation: shake 0.3s ease-in-out;
+}
+
+.animate-check-pop {
+  animation: check-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.animate-pulse-success {
+  animation: pulse-success 0.6s ease-in-out;
+}
+
+/* Reduced Motion Override */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

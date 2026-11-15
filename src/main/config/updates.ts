@@ -263,14 +263,40 @@ class UpdatesManager {
           this.state.tools.ffmpeg.newBuildSize = '82 MB';
         }
 
-        this.state.tools.ffmpeg.status = 'available';
         this.state.tools.ffmpeg.newBuildDate = publishedDate || 'Recent build';
+
+        // Check if current installed FFmpeg is up to date or updated within 14 days (Spec Section 8)
+        const ffmpegPath = getBinaryPath('ffmpeg');
+        let installedMtime = 0;
+        if (fs.existsSync(ffmpegPath)) {
+          try {
+            installedMtime = fs.statSync(ffmpegPath).mtimeMs;
+          } catch {}
+        }
+
+        const settings = settingsManager.getSettings();
+        const lastInstalledDate = (settings.updates as any)?.ffmpegInstalledBuildDate || '';
+        const lastUpdateTimestamp = (settings.updates as any)?.ffmpegLastUpdated || 0;
+
+        const publishedTimestamp = publishedDate ? new Date(publishedDate).getTime() : 0;
+        const isRecentlyUpdated = (Date.now() - lastUpdateTimestamp < 14 * 24 * 60 * 60 * 1000) ||
+                                  (installedMtime > 0 && Date.now() - installedMtime < 14 * 24 * 60 * 60 * 1000);
+        const isSameDate = Boolean(lastInstalledDate && publishedDate && lastInstalledDate === publishedDate);
+
+        // Spec: Flag "Update available" only if latest build is at least 14 days newer than the installed one
+        const isAtLeast14DaysNewer = publishedTimestamp > 0 && installedMtime > 0
+          ? (publishedTimestamp - installedMtime >= 14 * 24 * 60 * 60 * 1000)
+          : false;
+
+        if (!isSameDate && !isRecentlyUpdated && isAtLeast14DaysNewer) {
+          this.state.tools.ffmpeg.status = 'available';
+        } else {
+          this.state.tools.ffmpeg.status = 'upToDate';
+        }
+
         this.state.tools.ffmpeg.checkedAt = 'Video tools · checked today, ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       } else {
-        this.state.tools.ffmpeg.downloadUrl = 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip';
-        this.state.tools.ffmpeg.newBuildSize = '82 MB';
-        this.state.tools.ffmpeg.newBuildDate = 'Recent build';
-        this.state.tools.ffmpeg.status = 'available';
+        this.state.tools.ffmpeg.status = 'upToDate';
         this.state.tools.ffmpeg.checkedAt = 'Video tools · checked today';
       }
     } catch {

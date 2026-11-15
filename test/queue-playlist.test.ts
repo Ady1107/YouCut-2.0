@@ -7,6 +7,7 @@ import { mapYtDlpError } from '../src/main/download/errors';
 import { sanitizeFilename, formatClipStamp } from '../src/shared/filename';
 import { resolveUniqueOutputPath } from '../src/main/download/filename';
 import { validateOutputWithFFprobe } from '../src/main/download/validator';
+import { historyStore } from '../src/main/download/history';
 
 describe('Playlist URL Detection', () => {
   it('detects pure playlist URLs', () => {
@@ -85,6 +86,7 @@ describe('Unique Output Filename Resolution & Deduplication (Part A1)', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });
+
 
 describe('Validation Engine & Correction 1 Unit Tests', () => {
   it('FAILS validation when file predates job start', async () => {
@@ -193,3 +195,4 @@ describe('Hindi & Unicode Character Encoding (Part F)', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });
+

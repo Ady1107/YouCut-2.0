@@ -618,8 +618,26 @@ class QueueManager {
     // Format selection
     if (isAudioOnly) {
       args.push('-x', '--audio-format', ext === 'm4a' ? 'm4a' : ext === 'wav' ? 'wav' : 'mp3');
+      const kbpsMatch = item.quality?.match(/(\d+)\s*kbps/i);
+      if (kbpsMatch) {
+        args.push('--audio-quality', `${kbpsMatch[1]}K`);
+      } else {
+        args.push('--audio-quality', '0');
+      }
     } else {
-      args.push('-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best');
+      const cleanQuality = (item.quality || '').trim();
+      const heightMatch = cleanQuality.match(/(\d+)p/i);
+
+      if (heightMatch && !cleanQuality.toLowerCase().startsWith('best available')) {
+        const height = parseInt(heightMatch[1], 10);
+        args.push(
+          '-f',
+          `bestvideo[height<=${height}][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=${height}]+bestaudio/best[height<=${height}]/best`
+        );
+      } else {
+        args.push('-f', 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo+bestaudio/best[ext=mp4]/best');
+      }
+
       args.push('--merge-output-format', ext === 'mov' ? 'mov' : 'mp4');
     }
 
@@ -861,6 +879,14 @@ class QueueManager {
       indexInGroup: item.indexInGroup,
       totalInGroup: group?.childIds?.length
     });
+
+    // Broadcast history update to all renderer windows
+    const windows = BrowserWindow.getAllWindows();
+    for (const win of windows) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('history:updated');
+      }
+    }
 
     if (this.notificationsEnabled && Notification.isSupported()) {
       new Notification({

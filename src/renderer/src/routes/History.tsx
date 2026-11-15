@@ -13,7 +13,8 @@ import {
   InstagramIcon,
   FacebookIcon,
   ChevronDownIcon,
-  CheckIcon
+  CheckIcon,
+  RefreshCwIcon
 } from '../components/Icons';
 import { secondsToMs } from '../utils/time';
 
@@ -51,7 +52,7 @@ interface HistoryGroup {
 }
 
 export const HistoryRoute: React.FC = () => {
-  const { navigate, showToast } = useNavigation();
+  const { currentRoute, navigate, showToast } = useNavigation();
   const [historyItems, setHistoryItems] = useState<HistoryRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [platformFilter, setPlatformFilter] = useState<'all' | 'youtube' | 'instagram' | 'facebook'>('all');
@@ -70,7 +71,26 @@ export const HistoryRoute: React.FC = () => {
 
   useEffect(() => {
     loadHistory();
+
+    const unsub = window.api?.onHistoryUpdated?.(() => {
+      loadHistory();
+    });
+
+    const handleFocus = () => loadHistory();
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      unsub?.();
+      window.removeEventListener('focus', handleFocus);
+    };
   }, []);
+
+  // Reload history automatically whenever user navigates to the History tab
+  useEffect(() => {
+    if (currentRoute === 'history') {
+      loadHistory();
+    }
+  }, [currentRoute]);
 
   const handleClearHistory = async () => {
     try {
@@ -234,16 +254,28 @@ export const HistoryRoute: React.FC = () => {
           </p>
         </div>
 
-        <Button
-          variant="secondary"
-          size="md"
-          disabled={historyItems.length === 0}
-          onClick={handleClearHistory}
-          className="flex items-center gap-2"
-        >
-          <TrashIcon size={14} />
-          <span>Clear history</span>
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="secondary"
+            size="md"
+            onClick={loadHistory}
+            className="flex items-center gap-1.5"
+            title="Refresh history"
+          >
+            <RefreshCwIcon size={14} />
+            <span>Refresh</span>
+          </Button>
+          <Button
+            variant="secondary"
+            size="md"
+            disabled={historyItems.length === 0}
+            onClick={handleClearHistory}
+            className="flex items-center gap-2"
+          >
+            <TrashIcon size={14} />
+            <span>Clear history</span>
+          </Button>
+        </div>
       </div>
 
       {/* Search and Filters Bar */}
@@ -291,15 +323,26 @@ export const HistoryRoute: React.FC = () => {
               Videos and audio clips you download will appear here with one-click access to open their folders or play them.
             </p>
           </div>
-          <Button
-            variant="primary"
-            size="md"
-            onClick={() => navigate('youtube')}
-            className="flex items-center gap-2 mt-2"
-          >
-            <ScissorsIcon size={16} />
-            <span>Start Clipping</span>
-          </Button>
+          <div className="flex items-center gap-3 mt-2">
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={loadHistory}
+              className="flex items-center gap-2"
+            >
+              <RefreshCwIcon size={14} />
+              <span>Refresh</span>
+            </Button>
+            <Button
+              variant="primary"
+              size="md"
+              onClick={() => navigate('youtube')}
+              className="flex items-center gap-2"
+            >
+              <ScissorsIcon size={16} />
+              <span>Start Clipping</span>
+            </Button>
+          </div>
         </Card>
       ) : (
         <div className="flex flex-col gap-4">

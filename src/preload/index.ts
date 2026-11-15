@@ -80,6 +80,7 @@ export interface IElectronAPI {
   clearHistory: () => Promise<void>;
   removeHistoryItem: (id: string) => Promise<void>;
   checkHistoryDuplicate: (url: string, format: string, isFullVideo: boolean, startSec?: number, endSec?: number) => Promise<HistoryRecord | undefined>;
+  onHistoryUpdated: (callback: () => void) => () => void;
 
   // System shell
   openFolder: (filePath: string) => Promise<boolean>;
@@ -146,6 +147,11 @@ const api: IElectronAPI = {
   removeHistoryItem: (id) => ipcRenderer.invoke('history:remove', id),
   checkHistoryDuplicate: (url, format, isFullVideo, startSec, endSec) =>
     ipcRenderer.invoke('history:check-duplicate', url, format, isFullVideo, startSec, endSec),
+  onHistoryUpdated: (callback) => {
+    const handler = () => callback();
+    ipcRenderer.on('history:updated', handler);
+    return () => ipcRenderer.removeListener('history:updated', handler);
+  },
 
   openFolder: (filePath) => ipcRenderer.invoke('shell:open-folder', filePath),
   openFile: (filePath) => ipcRenderer.invoke('shell:open-file', filePath),

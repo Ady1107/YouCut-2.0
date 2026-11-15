@@ -78,6 +78,7 @@ export const UrlBar: React.FC<UrlBarProps> = ({
         <span className="sr-only">Video URL</span>
         <input
           type="text"
+          data-testid="url-input"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder={`Paste a ${platform} URL (video or Short)...`}

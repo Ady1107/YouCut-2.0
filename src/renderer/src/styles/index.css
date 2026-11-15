@@ -1,3 +1,11 @@
+@import '@fontsource/inter/400.css';
+@import '@fontsource/inter/500.css';
+@import '@fontsource/inter/600.css';
+@import '@fontsource/inter/700.css';
+@import '@fontsource/space-grotesk/500.css';
+@import '@fontsource/space-grotesk/600.css';
+@import '@fontsource/space-grotesk/700.css';
+
 @import './tokens.css';
 
 @tailwind base;
@@ -10,7 +18,7 @@
     padding: 0;
     background-color: var(--bg-app);
     color: var(--text-primary);
-    font-family: 'Inter', 'Nirmala UI', 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
     font-size: 14px;
     user-select: none;
     -webkit-font-smoothing: antialiased;
@@ -21,7 +29,7 @@
     user-select: text;
   }
 
-  /* Custom scrollbar for dark theme */
+  /* Custom scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -30,10 +38,10 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
-    background: #232733;
+    background: var(--border-default);
     border-radius: 999px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: #2A2E3B;
+    background: var(--border-strong);
   }
 }

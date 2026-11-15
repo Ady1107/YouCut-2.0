@@ -21,7 +21,7 @@ export const Chip: React.FC<ChipProps> = ({
 
   if (variant === 'format') {
     styleClasses = selected
-      ? 'border-accent bg-[#2A1B19] text-[#FF8C7E] font-semibold'
+      ? 'border-accent bg-[var(--accent-tint)] text-[var(--accent-tint-text)] font-semibold shadow-sm'
       : 'border-border-strong bg-transparent text-foreground-subtle hover:border-border-muted font-medium';
     return (
       <button
@@ -37,7 +37,7 @@ export const Chip: React.FC<ChipProps> = ({
 
   if (variant === 'platform-youtube') {
     return (
-      <span className={`px-2.5 py-1 rounded-full bg-[#2A1B19] text-[#FF8C7E] text-xs font-semibold select-none ${className}`}>
+      <span className={`px-2.5 py-1 rounded-full bg-[var(--accent-youtube-tint)] text-[var(--accent-youtube-tint-text)] text-xs font-semibold select-none ${className}`}>
         {children}
       </span>
     );
@@ -45,7 +45,7 @@ export const Chip: React.FC<ChipProps> = ({
 
   if (variant === 'platform-instagram') {
     return (
-      <span className={`px-2.5 py-1 rounded-full bg-[#2B1A26] text-[#F28BB8] text-xs font-semibold select-none ${className}`}>
+      <span className={`px-2.5 py-1 rounded-full bg-[var(--accent-instagram-tint)] text-[var(--accent-instagram-tint-text)] text-xs font-semibold select-none ${className}`}>
         {children}
       </span>
     );
@@ -53,7 +53,7 @@ export const Chip: React.FC<ChipProps> = ({
 
   if (variant === 'platform-facebook') {
     return (
-      <span className={`px-2.5 py-1 rounded-full bg-[#17233D] text-[#8DB4FF] text-xs font-semibold select-none ${className}`}>
+      <span className={`px-2.5 py-1 rounded-full bg-[var(--accent-facebook-tint)] text-[var(--accent-facebook-tint-text)] text-xs font-semibold select-none ${className}`}>
         {children}
       </span>
     );
@@ -69,7 +69,7 @@ export const Chip: React.FC<ChipProps> = ({
 
   if (variant === 'accent-pill') {
     return (
-      <span className={`px-3 py-1.5 rounded-full bg-[#2A1B19] text-[#FF8C7E] text-[13px] font-semibold whitespace-nowrap select-none ${className}`}>
+      <span className={`px-3 py-1.5 rounded-full bg-[var(--accent-tint)] text-[var(--accent-tint-text)] text-[13px] font-semibold whitespace-nowrap select-none ${className}`}>
         {children}
       </span>
     );

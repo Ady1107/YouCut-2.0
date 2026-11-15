@@ -11,6 +11,8 @@ import { ChaptersPopover, Chapter } from '../components/ChaptersPopover';
 import { WrongPlatformBanner, PlaylistNoticeBanner } from '../components/WrongPlatformBanner';
 import { secondsToHms, secondsToMs, hmsToSeconds, formatHumanDuration } from '../utils/time';
 import { sanitizeFilename } from '../utils/filename';
+import { PlaylistView } from '../components/playlist/PlaylistView';
+import { PlaylistInfo, QueueGroup, QueueItem } from '../../../shared/types';
 import {
   PlayIcon,
   PauseIcon,
@@ -81,11 +83,40 @@ export const YouTubeRoute: React.FC = () => {
   // Dropdown states
   const [isQualityDropdownOpen, setIsQualityDropdownOpen] = useState(false);
 
+  // Playlist Mode States
+  const [activeSubTab, setActiveSubTab] = useState<'video' | 'playlist'>('video');
+  const [playlistUrl, setPlaylistUrl] = useState('');
+  const [playlistInfo, setPlaylistInfo] = useState<PlaylistInfo | null>(null);
+  const [isPlaylistLoading, setIsPlaylistLoading] = useState(false);
+  const [playlistError, setPlaylistError] = useState<string | null>(null);
+
   const isVideoLoaded = Boolean(videoInfo);
   const totalDuration = videoInfo ? videoInfo.duration : 0;
-  const startSec = hmsToSeconds(startTime);
-  const endSec = hmsToSeconds(endTime) || totalDuration;
-  const clipDuration = Math.max(0, endSec - startSec);
+  const parsedStart = hmsToSeconds(startTime);
+  const startSec = isNaN(parsedStart) ? 0 : parsedStart;
+  const parsedEnd = hmsToSeconds(endTime);
+  const endSec = isNaN(parsedEnd) ? totalDuration : parsedEnd;
+  const clipDuration = endSec - startSec;
+  const isRangeValid = isFullVideo || (clipDuration >= 1 && startSec >= 0 && endSec <= totalDuration);
+  const [duplicateRecord, setDuplicateRecord] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!videoInfo || !currentUrl || !window.api?.checkHistoryDuplicate) {
+      setDuplicateRecord(null);
+      return;
+    }
+    let active = true;
+    window.api.checkHistoryDuplicate(
+      currentUrl,
+      selectedFormat,
+      isFullVideo,
+      isFullVideo ? undefined : startSec,
+      isFullVideo ? undefined : endSec
+    ).then((match) => {
+      if (active) setDuplicateRecord(match || null);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [videoInfo, currentUrl, selectedFormat, isFullVideo, startSec, endSec]);
 
   // Load real default save folder from native system
   useEffect(() => {
@@ -210,7 +241,7 @@ export const YouTubeRoute: React.FC = () => {
     }
   };
 
-  const handleUrlChange = (url: string) => {
+  const handleUrlChange = async (url: string) => {
     setCurrentUrl(url);
     const trimmed = url.trim();
 
@@ -222,10 +253,44 @@ export const YouTubeRoute: React.FC = () => {
       setWrongPlatform(null);
     }
 
+    if (window.api?.detectPlaylist) {
+      try {
+        const det = await window.api.detectPlaylist(trimmed);
+        if (det.isPlaylist) {
+          setActiveSubTab('playlist');
+          setPlaylistUrl(trimmed);
+          return;
+        }
+      } catch {}
+    }
+
     if (trimmed.includes('list=') || trimmed.includes('playlist?')) {
       setShowPlaylistNotice(true);
     } else {
       setShowPlaylistNotice(false);
+    }
+  };
+
+  const handleFetchPlaylist = async (urlToFetch?: string) => {
+    const target = (urlToFetch || playlistUrl || currentUrl).trim();
+    if (!target) {
+      showToast('Please enter a YouTube playlist URL', 'info');
+      return;
+    }
+    setPlaylistUrl(target);
+    setIsPlaylistLoading(true);
+    setPlaylistError(null);
+    try {
+      if (window.api?.fetchPlaylist) {
+        const info = await window.api.fetchPlaylist(target);
+        setPlaylistInfo(info);
+        showToast(`Playlist found: ${info.title} (${info.count} videos)`, 'success');
+      }
+    } catch (e: any) {
+      setPlaylistError(e.message || 'Failed to fetch playlist');
+      showToast(e.message || 'Failed to fetch playlist', 'error');
+    } finally {
+      setIsPlaylistLoading(false);
     }
   };
 
@@ -432,8 +497,6 @@ export const YouTubeRoute: React.FC = () => {
     const sec = hmsToSeconds(startTime);
     if (isNaN(sec) || sec < 0) {
       setStartTime('00:00:00');
-    } else if (sec >= endSec) {
-      setStartTime(secondsToHms(Math.max(0, endSec - 1)));
     } else {
       setStartTime(secondsToHms(sec));
     }
@@ -450,10 +513,8 @@ export const YouTubeRoute: React.FC = () => {
 
   const handleEndTimeBlur = () => {
     const sec = hmsToSeconds(endTime);
-    if (isNaN(sec) || sec > totalDuration) {
+    if (isNaN(sec)) {
       setEndTime(secondsToHms(totalDuration));
-    } else if (sec <= startSec) {
-      setEndTime(secondsToHms(Math.min(totalDuration, startSec + 1)));
     } else {
       setEndTime(secondsToHms(sec));
     }
@@ -528,31 +589,70 @@ export const YouTubeRoute: React.FC = () => {
 
   const handleAddAllChapters = async (chapters: Chapter[]) => {
     if (!videoInfo) return;
-    for (const ch of chapters) {
-      const item = {
-        id: Math.random().toString(36).substring(2, 9),
-        title: `${videoInfo.title} - ${ch.title}`,
+    const groupId = Math.random().toString(36).substring(2, 9);
+
+    const children: QueueItem[] = chapters.map((ch, idx) => {
+      const childId = Math.random().toString(36).substring(2, 9);
+      return {
+        id: childId,
+        platform: 'youtube',
         url: currentUrl,
-        platform: 'youtube' as const,
-        format: selectedFormat,
+        title: `${videoInfo.title} - ${ch.title}`,
+        thumbnailUrl: videoInfo.thumbnail,
+        durationSec: Math.max(1, ch.end_time - ch.start_time),
+        format: selectedFormat.toLowerCase() as any,
         quality: selectedResolution,
-        startSec: ch.start_time,
-        endSec: ch.end_time,
-        isFullVideo: false,
-        frameAccurate,
-        saveFolder,
-        fileName: sanitizeFilename(`${videoInfo.title}_${ch.title}`, 60)
+        mode: mediaType,
+        clip: { startSec: ch.start_time, endSec: ch.end_time },
+        outputDir: saveFolder,
+        fileName: sanitizeFilename(`${videoInfo.title}_${ch.title}`, 60),
+        status: 'waiting',
+        progress: {
+          percent: 0,
+          downloadedBytes: 0,
+          totalBytes: 0,
+          speedBps: 0,
+          speed: '—',
+          etaSec: 0,
+          eta: '—'
+        },
+        attempts: 0,
+        groupId,
+        indexInGroup: idx + 1,
+        addedAt: Date.now(),
+        frameAccurate
       };
-      if (window.api && window.api.addToQueue) {
-        await window.api.addToQueue(item);
-      }
+    });
+
+    const group: QueueGroup = {
+      id: groupId,
+      kind: 'chapters',
+      title: `${videoInfo.title} (Chapters)`,
+      channel: videoInfo.uploader,
+      sourceUrl: currentUrl,
+      thumbnailUrl: videoInfo.thumbnail,
+      childIds: children.map((c) => c.id),
+      options: {
+        format: selectedFormat.toLowerCase() as any,
+        quality: selectedResolution,
+        mode: mediaType
+      },
+      createdAt: Date.now()
+    };
+
+    if (window.api?.addGroupToQueue) {
+      await window.api.addGroupToQueue(group, children);
+      showToast(`Added ${chapters.length} chapter clips to queue`, 'success');
     }
-    showToast(`Added ${chapters.length} chapter clips to queue`, 'success');
   };
 
   // Add to Queue handler
   const handleAddToQueue = async () => {
     if (!videoInfo) return;
+    if (!isRangeValid) {
+      showToast('Clip duration must be at least 1 second (End must be after Start)', 'error');
+      return;
+    }
     const finalStart = isFullVideo ? 0 : startSec;
     const finalEnd = isFullVideo ? totalDuration : endSec;
 
@@ -568,12 +668,15 @@ export const YouTubeRoute: React.FC = () => {
       isFullVideo,
       frameAccurate,
       saveFolder,
-      fileName
+      fileName,
+      thumbnail: videoInfo.thumbnail,
+      duration: totalDuration
     };
 
     if (window.api && window.api.addToQueue) {
       await window.api.addToQueue(item);
-      showToast(`Added "${fileName}" to queue`, 'success');
+      // Immediately navigate to queue tab per user request (no toast popup)
+      navigate('queue');
     } else {
       showToast('Queue API not available. Please restart the app.', 'error');
     }
@@ -582,7 +685,6 @@ export const YouTubeRoute: React.FC = () => {
   // Download Clip handler (adds to queue and navigates to queue view)
   const handleDownloadNow = async () => {
     await handleAddToQueue();
-    navigate('queue');
   };
 
   const handleBrowseFolder = async () => {
@@ -607,16 +709,94 @@ export const YouTubeRoute: React.FC = () => {
 
   return (
     <div className="flex-1 flex flex-col gap-3.5 p-5 overflow-y-auto max-w-[1300px] mx-auto w-full box-border">
-      {/* Top URL Bar */}
-      <UrlBar
-        platform="YouTube"
-        initialUrl={currentUrl}
-        onFetch={(url) => {
-          handleUrlChange(url);
-          handleFetchInfo(url);
-        }}
-        isLoading={isLoading}
-      />
+      {/* Top Video | Playlist Segmented Bar */}
+      <div className="flex items-center justify-between pb-1 select-none">
+        <SegmentedToggle
+          value={activeSubTab}
+          onChange={(val) => {
+            setActiveSubTab(val as 'video' | 'playlist');
+            if (val === 'playlist' && !playlistUrl && currentUrl) {
+              setPlaylistUrl(currentUrl);
+            }
+          }}
+          options={[
+            { value: 'video', label: 'Video' },
+            { value: 'playlist', label: 'Playlist' }
+          ]}
+        />
+        <span className="text-xs text-foreground-muted hidden sm:inline">
+          Links with a playlist id open this tab automatically.
+        </span>
+      </div>
+
+      {activeSubTab === 'playlist' ? (
+        <div className="flex flex-col gap-4">
+          <UrlBar
+            platform="YouTube"
+            initialUrl={playlistUrl || currentUrl}
+            onFetch={(url) => {
+              setPlaylistUrl(url);
+              handleFetchPlaylist(url);
+            }}
+            isLoading={isPlaylistLoading}
+          />
+
+          {isPlaylistLoading && (
+            <Card className="p-12 rounded-[18px] bg-card border-border-strong flex flex-col items-center justify-center gap-3">
+              <div className="w-8 h-8 border-3 border-accent border-t-transparent rounded-full animate-spin" />
+              <span className="text-xs font-medium text-foreground-muted">
+                Fetching playlist metadata...
+              </span>
+            </Card>
+          )}
+
+          {playlistError && (
+            <Card className="p-4 rounded-[18px] bg-card border-status-danger/30 flex items-center justify-between">
+              <span className="text-xs text-status-danger font-medium">{playlistError}</span>
+              <Button size="sm" variant="secondary" onClick={() => handleFetchPlaylist()}>
+                Retry
+              </Button>
+            </Card>
+          )}
+
+          {playlistInfo && !isPlaylistLoading && (
+            <PlaylistView
+              playlistInfo={playlistInfo}
+              playlistUrl={playlistUrl}
+              defaultSaveFolder={saveFolder}
+            />
+          )}
+
+          {!playlistInfo && !isPlaylistLoading && !playlistError && (
+            <Card className="p-12 rounded-[18px] bg-card border-border-strong flex flex-col items-center justify-center text-center gap-3">
+              <div className="w-14 h-14 rounded-[14px] bg-surface flex items-center justify-center text-foreground-muted">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                  <polyline points="2 17 12 22 22 17" />
+                  <polyline points="2 12 12 17 22 12" />
+                </svg>
+              </div>
+              <h3 className="font-display font-semibold text-base text-foreground">
+                Paste a YouTube playlist URL
+              </h3>
+              <p className="text-foreground-muted text-xs max-w-sm">
+                Enter any public or unlisted YouTube playlist link above to inspect videos, customize quality, and download in bulk.
+              </p>
+            </Card>
+          )}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3.5">
+          {/* Top URL Bar */}
+          <UrlBar
+            platform="YouTube"
+            initialUrl={currentUrl}
+            onFetch={(url) => {
+              handleUrlChange(url);
+              handleFetchInfo(url);
+            }}
+            isLoading={isLoading}
+          />
 
       {/* Wrong Platform Banner */}
       {wrongPlatform && (
@@ -978,6 +1158,7 @@ export const YouTubeRoute: React.FC = () => {
                 </div>
                 <input
                   type="text"
+                  data-testid="start-time-input"
                   value={isFullVideo ? '00:00:00' : startTime}
                   disabled={isFullVideo || !isVideoLoaded}
                   onChange={(e) => handleStartTimeInputChange(e.target.value)}
@@ -989,7 +1170,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleAdjustTime('start', -1)}
-                    className="flex-1 h-8 rounded-[8px] bg-[#1B1E27] text-foreground-muted text-xs font-medium hover:text-foreground disabled:opacity-40"
+                    className="flex-1 h-8 rounded-[8px] bg-surface border border-border text-foreground-muted text-xs font-medium hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
                   >
                     -1s
                   </button>
@@ -997,7 +1178,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleAdjustTime('start', 1)}
-                    className="flex-1 h-8 rounded-[8px] bg-[#1B1E27] text-foreground-muted text-xs font-medium hover:text-foreground disabled:opacity-40"
+                    className="flex-1 h-8 rounded-[8px] bg-surface border border-border text-foreground-muted text-xs font-medium hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
                   >
                     +1s
                   </button>
@@ -1005,7 +1186,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleUsePlayhead('start')}
-                    className="flex-1 h-8 rounded-[8px] bg-[#2A1B19] text-[#FF8C7E] text-xs font-semibold hover:bg-accent hover:text-[#1A0805] transition-all disabled:opacity-40"
+                    className="flex-1 h-8 rounded-[8px] bg-[var(--accent-tint)] text-[var(--accent-tint-text)] border border-accent/20 text-xs font-semibold hover:bg-accent hover:text-[#1A0805] transition-all disabled:opacity-40"
                     title="Set start trim point to playhead (Shortcut: I)"
                   >
                     Use playhead (I)
@@ -1021,6 +1202,7 @@ export const YouTubeRoute: React.FC = () => {
                 </div>
                 <input
                   type="text"
+                  data-testid="end-time-input"
                   value={isFullVideo && videoInfo ? videoInfo.durationFormatted : endTime}
                   disabled={isFullVideo || !isVideoLoaded}
                   onChange={(e) => handleEndTimeInputChange(e.target.value)}
@@ -1032,7 +1214,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleAdjustTime('end', -1)}
-                    className="flex-1 h-8 rounded-[8px] bg-[#1B1E27] text-foreground-muted text-xs font-medium hover:text-foreground disabled:opacity-40"
+                    className="flex-1 h-8 rounded-[8px] bg-surface border border-border text-foreground-muted text-xs font-medium hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
                   >
                     -1s
                   </button>
@@ -1040,7 +1222,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleAdjustTime('end', 1)}
-                    className="flex-1 h-8 rounded-[8px] bg-[#1B1E27] text-foreground-muted text-xs font-medium hover:text-foreground disabled:opacity-40"
+                    className="flex-1 h-8 rounded-[8px] bg-surface border border-border text-foreground-muted text-xs font-medium hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
                   >
                     +1s
                   </button>
@@ -1048,7 +1230,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleUsePlayhead('end')}
-                    className="flex-1 h-8 rounded-[8px] bg-[#2A1B19] text-[#FF8C7E] text-xs font-semibold hover:bg-accent hover:text-[#1A0805] transition-all disabled:opacity-40"
+                    className="flex-1 h-8 rounded-[8px] bg-[var(--accent-tint)] text-[var(--accent-tint-text)] border border-accent/20 text-xs font-semibold hover:bg-accent hover:text-[#1A0805] transition-all disabled:opacity-40"
                     title="Set end trim point to playhead (Shortcut: O)"
                   >
                     Use playhead (O)
@@ -1067,7 +1249,7 @@ export const YouTubeRoute: React.FC = () => {
                     type="button"
                     disabled={isFullVideo || !isVideoLoaded}
                     onClick={() => handleApplyPreset(preset)}
-                    className="h-7 px-2.5 rounded-[8px] bg-[#1B1E27] border border-border text-[11px] text-foreground-muted font-medium hover:text-foreground hover:border-border-muted transition-all select-none disabled:opacity-40"
+                    className="h-7 px-2.5 rounded-[8px] bg-surface border border-border text-[11px] text-foreground-muted font-medium hover:text-foreground hover:bg-surface-hover hover:border-border-muted transition-all select-none disabled:opacity-40"
                   >
                     {preset}
                   </button>
@@ -1278,12 +1460,45 @@ export const YouTubeRoute: React.FC = () => {
             </span>
           </div>
 
+          {/* Duplicate Download Notice (A4) */}
+          {duplicateRecord && (
+            <div className="mb-2 p-2.5 rounded-lg border border-border bg-card flex flex-col gap-1 text-[11px]">
+              <span className="text-foreground-muted">
+                You already downloaded this {isFullVideo ? 'video' : 'clip'} ({duplicateRecord.format} · {duplicateRecord.durationFormatted})
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.api?.openFolder(duplicateRecord.filePath)}
+                  className="text-accent hover:underline font-medium"
+                >
+                  Open in folder
+                </button>
+                <span className="text-foreground-muted">·</span>
+                <button
+                  type="button"
+                  onClick={handleAddToQueue}
+                  className="text-foreground hover:underline font-medium"
+                >
+                  Download again
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Invalid Range Inline Notice (A3) */}
+          {!isRangeValid && isVideoLoaded && (
+            <div className="text-[12px] text-danger font-medium text-center py-1">
+              Clip duration must be at least 1s (End &gt; Start)
+            </div>
+          )}
+
           {/* Pinned Action Buttons */}
           <div className="flex flex-col gap-2 mt-auto pt-2">
             <Button
               variant="secondary"
               size="lg"
-              disabled={!isVideoLoaded}
+              disabled={!isVideoLoaded || !isRangeValid}
               onClick={handleAddToQueue}
               className="w-full flex items-center justify-center gap-2"
             >
@@ -1294,7 +1509,7 @@ export const YouTubeRoute: React.FC = () => {
             <Button
               variant="primary"
               size="lg"
-              disabled={!isVideoLoaded}
+              disabled={!isVideoLoaded || !isRangeValid}
               onClick={handleDownloadNow}
               className="w-full flex items-center justify-center gap-2 font-bold"
             >
@@ -1304,6 +1519,8 @@ export const YouTubeRoute: React.FC = () => {
           </div>
         </div>
       </div>
+      </div>
+      )}
     </div>
   );
 };

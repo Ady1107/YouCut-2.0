@@ -155,7 +155,7 @@ async function run() {
 
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   const context = await browser.newContext({
-    viewport: { width: 1176, height: 784 }
+    viewport: { width: 1280, height: 980 }
   });
 
   await context.addInitScript(() => {
@@ -183,6 +183,8 @@ async function run() {
         title: 'B.Tech / MCA वालों के लिए Golden Chance! RPSC Programmer 2026',
         url: 'https://youtu.be/8tGX7iIPSrM',
         platform: 'youtube',
+        thumbnail: 'https://i.ytimg.com/vi/aqz-KE-bpKQ/maxresdefault.jpg',
+        duration: 724,
         format: 'MP4',
         quality: '1080p',
         startSec: 45,
@@ -205,6 +207,8 @@ async function run() {
         title: 'Blender 4K Official Animated Short Film',
         url: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
         platform: 'youtube',
+        thumbnail: 'https://i.ytimg.com/vi/aqz-KE-bpKQ/maxresdefault.jpg',
+        duration: 635,
         format: 'MP3',
         quality: '320 kbps (High)',
         startSec: 0,
@@ -400,6 +404,41 @@ async function run() {
   const shotYtLight = path.join(outDir, '07-youtube-light-mode.png');
   await page.screenshot({ path: shotYtLight });
   console.log('  -> Saved:', shotYtLight);
+
+  // Also scroll down to capture START / END and presets in Light mode
+  await page.evaluate(() => {
+    const el = document.querySelector('div.overflow-y-auto');
+    if (el) el.scrollTop = 450;
+  });
+  await page.waitForTimeout(300);
+  const shotYtTrimLight = path.join(outDir, '07b-youtube-light-mode-trim-controls.png');
+  await page.screenshot({ path: shotYtTrimLight });
+  console.log('  -> Saved:', shotYtTrimLight);
+
+  // 9. Queue view in Light mode
+  console.log('Navigating to Queue route in Light mode...');
+  await page.click('button[data-route="queue"]');
+  await page.waitForTimeout(400);
+
+  const shotQueueLight = path.join(outDir, '08-queue-light-mode.png');
+  await page.screenshot({ path: shotQueueLight });
+  console.log('  -> Saved:', shotQueueLight);
+
+  // 10. Test Add to queue from YouTube route: clicks "Add to queue" and verifies immediate navigation to Queue
+  console.log('Testing "Add to queue" direct navigation without toasts...');
+  await page.click('button[data-route="youtube"]');
+  await page.waitForTimeout(300);
+
+  const addToQueueBtn = page.locator('button:has-text("Add to queue")');
+  await addToQueueBtn.click();
+  await page.waitForTimeout(400);
+
+  // Verify we are now on Queue route
+  const queueHeaderCount = await page.locator('h1:has-text("Download Queue")').count();
+  console.log('  -> Navigated to Download Queue after clicking Add to Queue:', queueHeaderCount > 0);
+  if (queueHeaderCount === 0) {
+    throw new Error('FAILED: "Add to queue" did not navigate to Queue tab!');
+  }
 
   await browser.close();
   server.close();

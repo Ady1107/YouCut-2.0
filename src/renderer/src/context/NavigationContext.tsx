@@ -16,21 +16,24 @@ export const NavigationProvider: React.FC<{ children: ReactNode }> = ({ children
 
   useEffect(() => {
     if (typeof window !== 'undefined' && window.api?.getQueue) {
-      window.api.getQueue().then((items) => {
-        const active = items.filter((i) => i.status === 'queued' || i.status === 'downloading');
+      window.api.getQueue().then((raw: any) => {
+        const items: any[] = Array.isArray(raw) ? raw : (raw?.items || []);
+        const active = items.filter((i: any) => i.status === 'queued' || i.status === 'downloading' || i.status === 'waiting');
         setQueueCount(active.length);
       }).catch(() => {});
     }
 
     if (typeof window !== 'undefined' && window.api?.onQueueUpdate) {
-      const unsub = window.api.onQueueUpdate((items) => {
-        const active = items.filter((i) => i.status === 'queued' || i.status === 'downloading');
+      const unsub = window.api.onQueueUpdate((raw: any) => {
+        const items: any[] = Array.isArray(raw) ? raw : (raw?.items || []);
+        const active = items.filter((i: any) => i.status === 'queued' || i.status === 'downloading' || i.status === 'waiting');
         setQueueCount(active.length);
-        const downloading = items.find((i) => i.status === 'downloading');
+        const downloading = items.find((i: any) => i.status === 'downloading');
         if (downloading) {
+          const pct = downloading.progress?.percent ?? downloading.progress ?? 0;
           setStatus({
             state: 'downloading',
-            text: `Downloading (${downloading.progress}%)`
+            text: `Downloading (${pct}%)`
           });
         } else {
           setStatus({

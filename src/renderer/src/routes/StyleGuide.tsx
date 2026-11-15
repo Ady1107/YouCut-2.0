@@ -270,6 +270,7 @@ export const StyleGuide: React.FC = () => {
                 />
                 <SelectField
                   label="Quality"
+                  value="1080p"
                   displayValue="Best available · 1080p"
                 />
               </div>

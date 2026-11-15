@@ -37,6 +37,23 @@ class HistoryStore {
     }
   }
 
+  public findDuplicate(url: string, format: string, isFullVideo: boolean, startSec?: number, endSec?: number): HistoryRecord | undefined {
+    const records = this.getAll();
+    const cleanUrl = (url || '').trim();
+    const cleanFmt = (format || '').toLowerCase();
+    return records.find((r) => {
+      if (r.url !== cleanUrl) return false;
+      if (r.format.toLowerCase() !== cleanFmt) return false;
+      if (isFullVideo) return r.isFullVideo;
+      if (r.isFullVideo) return false;
+      const s1 = Math.round(startSec || 0);
+      const e1 = Math.round(endSec || 0);
+      const s2 = Math.round(r.startSec || 0);
+      const e2 = Math.round(r.endSec || 0);
+      return Math.abs(s1 - s2) <= 1 && Math.abs(e1 - e2) <= 1;
+    });
+  }
+
   public add(record: HistoryRecord): void {
     try {
       const list = this.getAll();

@@ -59,3 +59,73 @@ Electron + TypeScript + React + Vite (electron-vite) + Tailwind. The Node main p
 
 ## EVIDENCE RULES (every gate)
 Real clicks through Playwright, never by calling functions. Screenshots come from the running app. Anything you did not run is written "not tested". Report: what you built, screenshots, ffprobe/log excerpts, what is NOT working, and deviations from the design. Leave no scratch files; show `git status`. Do not start the next phase until I reply.
+
+
+## SETTINGS PAGE SPECIFICATION (REPLACES P8 SETTINGS LIST)
+
+Build the Settings page of YouCut v2.0 so it matches the design "YouCut — Settings 1x.png" (1440x1100 at 1x, dark).
+
+### LAYOUT
+- Content sits right of the shared sidebar component (~190-220px: keep ONE width token). ~32px page padding. Content max width 1280, centered on big windows. The page scrolls vertically if the window is short; at 1440x1100 nothing scrolls.
+- Header: "Settings" 28px semibold, subtitle 14px muted.
+- Section "Updates": title 18-20px semibold + muted subtitle; on the right, muted "Last checked today, 14:02" and a secondary button "Check all for updates" (refresh icon). Under it 3 equal cards (~372x288, gap 20, radius 20, padding 20, 1px border, surface one step lighter than the page).
+- Below: two equal columns (~568px each, gap 20). Left: Appearance, then Downloads. Right: "Age-restricted and private videos", then About.
+- Responsive: below ~1100px content width the update cards go 2+1; below ~860px everything is one column. Minimum window 1040x720.
+- Components: icon tile 44px radius 12 (YouCut: accent fill with the scissors mark; yt-dlp and FFmpeg: dark tile with a Lucide download / film icon); status badge = 24px pill with a 6px dot (green "Up to date", orange "Updating", amber "Update available", neutral with spinner "Checking...", red "Couldn't check"); toggle role="switch" 44x26, accent when ON; secondary button (dark, 1px border, radius 12, height 44) and primary button (accent fill); progress bar 4px high with a "64% · 5.2 MB/s" row (tabular numbers); theme cards ~166x104 with a CSS-drawn mini preview (dark panel with a red and a gray bar; light panel; split half/half for System), a radio dot and a label, selected = accent border + tint + filled radio; selects and fields 44px high, radius 12; stepper "−  16  +" in one bordered control; About key/value rows with hairlines (values semibold, FFmpeg value monospace). Strings, icons and spacing exactly as in the design. All names and numbers in the PNG (2.0.0, 2026.10.26, 82 MB, 16, ...) are placeholders: show real values.
+
+### UPDATES: BEHAVIOUR
+One reusable <ToolUpdateCard> driven by a tool descriptor (youcut, ytdlp, ffmpeg), so gallery-dl can be added later. State per tool: upToDate, checking, available, downloading (percent, speed), waitingForIdle, installing, error (message, retryable). Update state lives in the main process; closing and reopening Settings never loses a running update.
+- YouCut: GET https://api.github.com/repos/Ady1107/YouCut-2.0/releases/latest, numeric semver compare, notes from the release body. The app NEVER installs itself silently. The toggle means "check on startup" (DEVIATION 1: this card's label reads "Check for updates on startup"). available = badge "Update available", "v2.0.1 · ≈ NN MB" + "What's new", primary button "Download update" that opens the installer asset URL in the default browser. upToDate = "You're on the latest version."
+- yt-dlp: GitHub yt-dlp/yt-dlp latest release, numeric compare (2026.08.19 equals 2026.8.19), installed version from `yt-dlp --version`. Never use `yt-dlp -U`. Download the yt-dlp.exe asset to a temp folder with real progress; verify its SHA-256 against the release's SHA2-256SUMS when present; run `--version` on the new file and require it to match the release; keep the old binary as .bak; swap in ONLY when the queue is idle (otherwise state waitingForIdle: "Will install when downloads finish"); restore the old one if anything fails. "Cancel update" aborts, deletes temp files, returns to available. The binary lives in YOUCUT_HOME/bin (first run copies the bundled one from resources/bin) with a manifest JSON next to it (tool, version, source, sha256, installedAt). Toggle ON = at startup (1h cooldown) and after extractor-type download failures, check and update in the background when idle. Toggle OFF = after such a failure show a toast with an "Update" action instead.
+- FFmpeg: same source and build flavor as scripts/fetch-binaries (record the flavor in the manifest). Download the zip, extract ffmpeg.exe and ffprobe.exe to temp, run `-version` on both, swap both together when idle, keep .bak. Flag "Update available" only if the latest build is at least 14 days newer than the installed one (the source publishes daily builds; otherwise it would nag daily). "New build YYYY-MM-DD · ≈ size" comes from the real asset. "What's new" opens the release page externally if there are no notes. Default toggle: OFF. Installed version string comes from the first line of `ffmpeg -version`.
+- Common: "Check all for updates" runs the checks in parallel and shows a spinner; the per-card buttons check one tool. "Last checked" = the last completed check-all, with relative formatting ("today, 14:02", "yesterday, 09:30", "12 Nov, 09:30"). Cache GitHub responses with ETag; minimum 5s between manual checks; offline and rate-limit cases show a calm message and Retry, never a raw error. Execute nothing downloaded except `--version` for verification. Render release notes as sanitized text (no raw HTML). The sidebar status pill mirrors "Updating yt-dlp..." / "Update available".
+
+### APPEARANCE
+- Radio group Dark / Light / System, persisted. System follows Windows via nativeTheme and updates live. Theme = a data-theme attribute on <html> with CSS variables, applied before first paint (set BrowserWindow backgroundColor; no flash).
+- There is no light design. Derive a light token set from the dark tokens (same accent), apply it to EVERY existing page, and give me light screenshots of all pages for approval. If I don't approve, ship with Light and System disabled and labelled "Soon" (feature flag FEATURE_LIGHT_THEME).
+
+### AGE-RESTRICTED AND PRIVATE VIDEOS (cookies)
+- Applies to every platform (YouTube now; Instagram/Facebook adapters use it later).
+- "Browser for cookies": None, Chrome, Edge, Firefox, Brave, Opera, Vivaldi, Chromium. Choosing a browser clears the file and vice versa (one active source). On choosing a browser run a cheap dry-run through yt-dlp's cookie loader and show a one-line status under the field ("Checking...", "Cookies can be read", or the reason, e.g. "Chrome may block access while it is open: close it or use a cookies.txt file"). Never read, show or log cookie contents.
+- cookies.txt: Browse (file dialog), validate Netscape format (header line or 7 tab-separated fields), inline error when invalid, store ONLY the path (never copy or upload). "Clear" removes the stored path, never the user's file. If the file later disappears show "File not found" beside the field.
+- Use: try WITHOUT cookies first; if the failure is login / age / private / members-only, retry once WITH cookies; for content that always needs login (Instagram and Facebook stories) pass cookies up front. Failure messages link to this card.
+- DEVIATION 2: add one small muted line under the card text: "Used for YouTube, Instagram and Facebook. A secondary account is safer: automated access can get an account rate-limited."
+
+### DOWNLOADS
+- Default output folder: field + Browse (directory dialog); validate exists and is writable, otherwise an inline error and keep the old value. Default = the Windows Downloads folder. It is the starting folder for every platform page; each page remembers the last folder the user chose there (stored per platform).
+- Concurrent download fragments: stepper 1-32 (clamp, hold-to-repeat), default 8 (the design's 16 is a mock value), passed as --concurrent-fragments. Helper: "More fragments download faster."
+- Default video format: MP4 / MOV (GIF stays a per-download choice); it feeds the output chips on every page.
+- Default trim mode: Auto (recommended) / Fast (keyframes) / Exact (slower). Auto = Exact when the source is 10 minutes or shorter, otherwise Fast. The page's "Frame-accurate" toggle starts ON only when the default is Exact; OFF means "use the default mode" (Auto resolves as above, Fast stays Fast); ON forces Exact.
+
+### ABOUT
+Real version rows (YouCut, yt-dlp, FFmpeg; add gallery-dl when present). FFmpeg value monospace and selectable. "Copy diagnostics" copies versions, the last 200 log lines, the last command and the settings (cookie path and URL query strings redacted), then shows a toast "Diagnostics copied". DEVIATION 3: add a small row of text links under it: "Licenses" (opens THIRD_PARTY_NOTICES), "GitHub", "Report an issue".
+(If user replies "exact only", remove all three deviations.)
+
+### PERSISTENCE AND IPC
+- settings.json under YOUCUT_HOME with schemaVersion 1. Changes apply immediately (no Save button); debounced atomic writes (temp file + rename). A corrupt file is moved to settings.json.corrupt and defaults are used, with a toast. Defaults:
+    appearance.theme "dark"
+    downloads.defaultFolder (Windows Downloads), downloads.lastFolderByPlatform {}, 
+    downloads.concurrentFragments 8, downloads.defaultVideoFormat "mp4", 
+    downloads.trimMode "auto"
+    cookies.browser "none", cookies.file null
+    updates.app.checkOnStartup true, updates.ytdlp.autoUpdate true, 
+    updates.ffmpeg.autoUpdate false, updates.lastCheckedAt null (+ per-tool timestamps)
+    notifications.mode "queue", notifications.onlyWhenBackground true, 
+    notifications.onFailure true (keys only, no UI yet)
+- Typed IPC (contextBridge): settings:get, settings:patch, updates:getState, updates:check(tool|all), updates:apply(tool), updates:cancel(tool), event updates:state. Validate payloads; register each listener once.
+- Accessibility: visible focus ring, role=switch/radiogroup/listbox, full keyboard use, respect prefers-reduced-motion.
+
+### FIXTURE AND TESTS
+- Dev-only fixture mode (env YOUCUT_FIXTURE=settings-design, unreachable in production builds) that renders exactly the design's mock state: frozen clock (2026-11-13 14:30) so "today, 14:02" shows; YouCut up to date; yt-dlp updating at 64% / 5.2 MB/s "Downloading v2026.11.12"; FFmpeg update available (2026-11-12, ≈ 82 MB); toggles ON / ON / OFF; Dark; fragments 16; the same folder and version strings. Also a mock updater (env YOUCUT_MOCK_UPDATES=<scenario>) for states that are hard to trigger.
+- GATE 1 (visual): Playwright screenshot at 1440x1100, deviceScaleFactor 1, pixel-diffed against the PNG. Report the % of differing pixels, attach side-by-side and diff images, list every difference you could not remove, iterate up to 5 times. Also give screenshots at 1180x800 and 1040x720.
+- GATE 2 (states): screenshots of YouCut (checking, up to date, available, error); yt-dlp (up to date, updating, waitingForIdle, error, just updated); FFmpeg (available, updating, up to date); Appearance in all three options (plus light screenshots of all pages if enabled); cookies (none, browser OK, browser error, file valid, file invalid, file missing); stepper at 1 and 32; an invalid folder; the diagnostics toast.
+- GATE 3 (real behaviour, always in a temp YOUCUT_HOME, never my real data): 
+  a) put an OLD yt-dlp release (downloaded from GitHub) into the data bin folder, click "Check for updates" on the yt-dlp card, and show real progress, the checksum verification, `--version` afterwards and the swap;
+  b) start a download, then trigger an update: it must wait for idle and install after;
+  c) "Cancel update" mid-download leaves the old binary intact and no temp files;
+  d) go offline: a calm error and Retry works;
+  e) set a cookies.txt and show the yt-dlp command contains --cookies (path redacted in the log);
+  f) change each default and show the Download page picks it up;
+  g) restart the app: everything persisted;
+  h) corrupt settings.json: recovery works.
+- Regression: the P3 flows still pass; closing the window mid-update leaves no yt-dlp/ffmpeg/app processes and no temp files; `git status` clean.

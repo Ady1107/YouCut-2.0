@@ -5,6 +5,7 @@ node_modules/
 dist/
 out/
 build/
+*.tsbuildinfo
 test-results/
 playwright-report/
 blob-report/

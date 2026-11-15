@@ -186,7 +186,7 @@ async function run() {
   // Run pixel comparison script
   const pyScript = path.join(projectRoot, 'scripts', 'diff-settings.py');
   console.log('Running pixel diff comparison...');
-  const res = spawnSync('C:\\Users\\adysi\\AppData\Local\\Python\\pythoncore-3.14-64\\python.exe', [
+  const res = spawnSync('C:\\Users\\adysi\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe', [
     pyScript,
     designImage,
     shot1440,

@@ -29,14 +29,25 @@ export const DoneCard: React.FC<DoneCardProps> = ({
     return `Done · ${Math.floor(diffSec / 3600)}h ago`;
   };
 
+  const isWarning = item.status === 'warning';
+
   return (
     <div
       className={`p-3.5 sm:p-4 rounded-[18px] bg-card border border-border-strong shadow-sm hover:border-border-muted transition-all flex items-center gap-3.5 ${className}`}
     >
-      {/* Green Check Icon */}
-      <div className="w-6 h-6 rounded-full bg-status-successTint border border-status-success/30 flex items-center justify-center text-status-success flex-none">
-        <CheckIcon size={13} strokeWidth={2.5} />
-      </div>
+      {/* Icon: Warning or Green Check */}
+      {isWarning ? (
+        <div
+          className="w-6 h-6 rounded-full bg-status-dangerTint border border-status-danger/40 flex items-center justify-center text-status-danger flex-none font-bold text-xs"
+          title={item.warning}
+        >
+          !
+        </div>
+      ) : (
+        <div className="w-6 h-6 rounded-full bg-status-successTint border border-status-success/30 flex items-center justify-center text-status-success flex-none">
+          <CheckIcon size={13} strokeWidth={2.5} />
+        </div>
+      )}
 
       {/* Thumbnail */}
       <div className="relative w-20 sm:w-24 h-12 sm:h-14 rounded-[8px] overflow-hidden bg-surface flex-none border border-border-subtle shadow-sm group">
@@ -83,8 +94,15 @@ export const DoneCard: React.FC<DoneCardProps> = ({
 
       {/* Status & Actions (Right) */}
       <div className="flex items-center gap-3 flex-none">
-        <span className="text-xs font-medium text-status-success">
-          {formatDoneTime(item.finishedAt)}
+        <span
+          className={`text-xs font-medium ${isWarning ? 'text-status-danger' : 'text-status-success'}`}
+          title={item.warning}
+        >
+          {isWarning
+            ? item.warning
+              ? `Finished with warning: ${item.warning}`
+              : 'Finished with warning'
+            : formatDoneTime(item.finishedAt)}
         </span>
 
         <button

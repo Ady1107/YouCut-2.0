@@ -63,6 +63,7 @@ export interface IElectronAPI {
   startNowQueueItem: (id: string) => Promise<void>;
   pauseAllQueue: () => Promise<void>;
   resumeAllQueue: () => Promise<void>;
+  resumeQueueCooldown: () => Promise<void>;
   clearCompletedQueue: () => Promise<void>;
   setQueueConcurrency: (n: number) => Promise<void>;
   onQueueUpdate: (callback: (payload: QueueStatePayload | QueueItem[]) => void) => () => void;
@@ -76,6 +77,7 @@ export interface IElectronAPI {
   getHistory: () => Promise<HistoryRecord[]>;
   clearHistory: () => Promise<void>;
   removeHistoryItem: (id: string) => Promise<void>;
+  checkHistoryDuplicate: (url: string, format: string, isFullVideo: boolean, startSec?: number, endSec?: number) => Promise<HistoryRecord | undefined>;
 
   // System shell
   openFolder: (filePath: string) => Promise<boolean>;
@@ -117,6 +119,7 @@ const api: IElectronAPI = {
   startNowQueueItem: (id) => ipcRenderer.invoke('queue:start-now', id),
   pauseAllQueue: () => ipcRenderer.invoke('queue:pause-all'),
   resumeAllQueue: () => ipcRenderer.invoke('queue:resume-all'),
+  resumeQueueCooldown: () => ipcRenderer.invoke('queue:resume-cooldown'),
   clearCompletedQueue: () => ipcRenderer.invoke('queue:clear-completed'),
   setQueueConcurrency: (n) => ipcRenderer.invoke('queue:set-concurrency', n),
 
@@ -137,6 +140,8 @@ const api: IElectronAPI = {
   getHistory: () => ipcRenderer.invoke('history:list'),
   clearHistory: () => ipcRenderer.invoke('history:clear'),
   removeHistoryItem: (id) => ipcRenderer.invoke('history:remove', id),
+  checkHistoryDuplicate: (url, format, isFullVideo, startSec, endSec) =>
+    ipcRenderer.invoke('history:check-duplicate', url, format, isFullVideo, startSec, endSec),
 
   openFolder: (filePath) => ipcRenderer.invoke('shell:open-folder', filePath),
   openFile: (filePath) => ipcRenderer.invoke('shell:open-file', filePath),

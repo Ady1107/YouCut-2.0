@@ -19,14 +19,17 @@ export function sanitizeFilename(name: string, maxLen: number = 70): string {
   return clean || 'youcut_clip';
 }
 
+export function formatHmsDot(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds || 0));
+  const hrs = Math.floor(s / 3600);
+  const mins = Math.floor((s % 3600) / 60);
+  const secs = s % 60;
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${pad(hrs)}.${pad(mins)}.${pad(secs)}`;
+}
+
 export function formatClipStamp(startSec: number, endSec: number): string {
-  const pad = (n: number) => Math.floor(n).toString().padStart(2, '0');
-  const fmt = (s: number) => {
-    const m = Math.floor(s / 60);
-    const sec = s % 60;
-    return `${pad(m)}m${pad(sec)}s`;
-  };
-  return `[${fmt(startSec)}-${fmt(endSec)}]`;
+  return `[${formatHmsDot(startSec)}-${formatHmsDot(endSec)}]`;
 }
 
 export function buildSafeClipFilename(
@@ -36,13 +39,14 @@ export function buildSafeClipFilename(
   ext: string,
   isFull: boolean = false
 ): string {
-  const baseTitle = sanitizeFilename(title, 60);
-  const cleanExt = ext.startsWith('.') ? ext : `.${ext}`;
-
+  const cleanExt = ext.startsWith('.') ? ext.substring(1) : ext;
   if (isFull) {
-    return `${baseTitle}${cleanExt}`;
+    const baseTitle = sanitizeFilename(title, 120);
+    return `${baseTitle}.${cleanExt}`;
   }
 
   const stamp = formatClipStamp(startSec, endSec);
-  return `${baseTitle} ${stamp}${cleanExt}`;
+  const maxTitle = Math.max(30, 160 - stamp.length);
+  const baseTitle = sanitizeFilename(title, maxTitle);
+  return `${baseTitle} ${stamp}.${cleanExt}`;
 }

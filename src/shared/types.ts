@@ -1,4 +1,4 @@
-export type QueueItemStatus = 'waiting' | 'downloading' | 'paused' | 'done' | 'failed' | 'canceled';
+export type QueueItemStatus = 'waiting' | 'downloading' | 'paused' | 'done' | 'warning' | 'failed' | 'canceled';
 
 export type QueueItemFormat = 'mp4' | 'mov' | 'gif' | 'mp3' | 'm4a' | 'wav';
 
@@ -33,6 +33,9 @@ export interface QueueItem {
   status: QueueItemStatus;
   progress: QueueProgress;
   error?: string;
+  warning?: string;
+  stderrTail?: string[];
+  phase?: string;
   attempts: number;
   sizeBytes?: number;
   finishedAt?: number;
@@ -105,5 +108,8 @@ export interface QueueStatePayload {
   activeCount: number;
   doneCount: number;
   failedCount: number;
+  warningCount?: number;
+  cooldownUntil?: number;
+  cooldownReason?: string;
   speedHistory: number[]; // 21 samples, every 500ms
 }

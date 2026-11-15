@@ -156,8 +156,10 @@ export const SettingsRoute: React.FC = () => {
           binaries: {
             ytdlp: '2026.10.26',
             ffmpeg: 'N-127579-g5cb9fcd211-20261016',
-            ffprobe: '7.1'
+            ffprobe: '7.1',
+            deno: '2.9.8'
           },
+          jsRuntime: 'Deno 2.9.8 (bundled)',
           settings: {
             theme,
             fragments,
@@ -192,7 +194,7 @@ export const SettingsRoute: React.FC = () => {
     <div className="flex-1 h-full overflow-y-auto bg-[#0B0C10] text-foreground select-none">
       <div className="max-w-[1280px] mx-auto p-8 box-border">
         {/* Page Header */}
-        <header className="mb-5">
+        <header className="mb-6">
           <h1 className="font-display text-[28px] font-semibold text-foreground tracking-tight leading-none">
             Settings
           </h1>
@@ -203,7 +205,7 @@ export const SettingsRoute: React.FC = () => {
 
         {/* Section: Updates */}
         <section className="mb-6">
-          <div className="flex items-center justify-between mb-3.5">
+          <div className="flex items-center justify-between mb-4">
             <div>
               <h2 className="text-[19px] font-semibold text-foreground tracking-tight leading-none">
                 Updates
@@ -832,6 +834,10 @@ export const SettingsRoute: React.FC = () => {
                   <span className="font-mono text-[12px] text-foreground select-all">
                     N-127579-g5cb9fcd211-20261016
                   </span>
+                </div>
+                <div className="py-2.5 border-b border-[#1E212B] flex items-center justify-between">
+                  <span className="text-foreground-muted font-medium">JS Runtime</span>
+                  <span className="font-semibold text-foreground">Deno 2.9.8 (bundled)</span>
                 </div>
               </div>
 

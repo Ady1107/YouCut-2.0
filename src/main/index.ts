@@ -181,6 +181,7 @@ ipcMain.handle('queue:reorder', (_event, order: string[]) => queueManager.reorde
 ipcMain.handle('queue:start-now', (_event, id: string) => queueManager.startNow(id));
 ipcMain.handle('queue:pause-all', () => queueManager.pauseAll());
 ipcMain.handle('queue:resume-all', () => queueManager.resumeAll());
+ipcMain.handle('queue:resume-cooldown', () => queueManager.resumeCooldown());
 ipcMain.handle('queue:clear-completed', () => queueManager.clearCompleted());
 ipcMain.handle('queue:set-concurrency', (_event, n: number) => queueManager.setMaxConcurrency(n));
 
@@ -192,6 +193,9 @@ ipcMain.handle('playlist:fetch', (_event, url: string) => fetchPlaylistInfo(url)
 ipcMain.handle('history:list', () => historyStore.getAll());
 ipcMain.handle('history:clear', () => historyStore.clear());
 ipcMain.handle('history:remove', (_event, id: string) => historyStore.remove(id));
+ipcMain.handle('history:check-duplicate', (_event, url: string, format: string, isFullVideo: boolean, startSec?: number, endSec?: number) => {
+  return historyStore.findDuplicate(url, format, isFullVideo, startSec, endSec);
+});
 
 // Shell System Handlers
 ipcMain.handle('shell:open-folder', (_event, filePath: string) => {
@@ -309,6 +313,7 @@ ipcMain.handle('cookies:validate-file', (_event, filePath: string) => {
 
 ipcMain.handle('diagnostics:get', () => {
   const settings = settingsManager.getSettings();
+  const denoPath = getBinaryPath('deno');
   const diagnostics = {
     app: 'YouCut v2.0',
     platform: process.platform,
@@ -316,8 +321,11 @@ ipcMain.handle('diagnostics:get', () => {
     binaries: {
       ytdlp: '2026.10.26',
       ffmpeg: 'N-127579-g5cb9fcd211-20261016',
-      ffprobe: '7.1'
+      ffprobe: '7.1',
+      deno: '2.9.8',
+      denoPath: fs.existsSync(denoPath) ? denoPath : 'not found'
     },
+    jsRuntime: fs.existsSync(denoPath) ? 'Deno 2.9.8 (bundled)' : 'none',
     settings: {
       appearance: settings.appearance,
       downloads: {
@@ -359,11 +367,12 @@ ipcMain.handle('youtube:fetch-info', async (_event, rawUrl: string) => {
   }
 
   return new Promise((resolve, reject) => {
+    const denoPath = getBinaryPath('deno');
     const args = [
       '--dump-json',
       '--no-playlist',
       '--js-runtimes',
-      'node',
+      `deno:${denoPath}`,
       '--no-warnings',
       cleanUrl
     ];

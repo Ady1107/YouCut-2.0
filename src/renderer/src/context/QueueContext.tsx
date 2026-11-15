@@ -17,6 +17,9 @@ export interface QueueContextType {
   activeCount: number;
   doneCount: number;
   failedCount: number;
+  warningCount: number;
+  cooldownUntil?: number;
+  cooldownReason?: string;
   speedHistory: number[];
   allUnfinishedCount: number;
 
@@ -32,6 +35,7 @@ export interface QueueContextType {
   startNow: (id: string) => Promise<void>;
   pauseAll: () => Promise<void>;
   resumeAll: () => Promise<void>;
+  resumeQueueCooldown: () => Promise<void>;
   clearCompleted: () => Promise<void>;
   toggleGroupCollapse: (groupId: string) => void;
 }
@@ -49,7 +53,10 @@ export const QueueProvider: React.FC<{ children: ReactNode }> = ({ children }) =
   const [waitingCount, setWaitingCount] = useState<number>(0);
   const [activeCount, setActiveCount] = useState<number>(0);
   const [doneCount, setDoneCount] = useState<number>(0);
+  const [warningCount, setWarningCount] = useState<number>(0);
   const [failedCount, setFailedCount] = useState<number>(0);
+  const [cooldownUntil, setCooldownUntil] = useState<number | undefined>(undefined);
+  const [cooldownReason, setCooldownReason] = useState<string | undefined>(undefined);
   const [speedHistory, setSpeedHistory] = useState<number[]>(new Array(21).fill(0));
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
@@ -60,10 +67,12 @@ export const QueueProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       const waiting = payload.filter((i) => i.status === 'waiting');
       const active = payload.filter((i) => i.status === 'downloading');
       const done = payload.filter((i) => i.status === 'done');
+      const warning = payload.filter((i) => i.status === 'warning');
       const failed = payload.filter((i) => i.status === 'failed');
       setWaitingCount(waiting.length);
       setActiveCount(active.length);
       setDoneCount(done.length);
+      setWarningCount(warning.length);
       setFailedCount(failed.length);
       return;
     }
@@ -73,13 +82,16 @@ export const QueueProvider: React.FC<{ children: ReactNode }> = ({ children }) =
       setGroups(payload.groups || []);
       setOrder(payload.order || []);
       setOverallSpeedBps(payload.overallSpeedBps || 0);
-      setOverallSpeedFormatted(payload.overallSpeedFormatted || '0 MB/s');
+      setOverallSpeedFormatted(payload.overallSpeedFormatted || '—');
       setOverallEtaSec(payload.overallEtaSec || 0);
       setOverallEtaFormatted(payload.overallEtaFormatted || '—');
       setWaitingCount(payload.waitingCount || 0);
       setActiveCount(payload.activeCount || 0);
       setDoneCount(payload.doneCount || 0);
+      setWarningCount(payload.warningCount || 0);
       setFailedCount(payload.failedCount || 0);
+      setCooldownUntil(payload.cooldownUntil);
+      setCooldownReason(payload.cooldownReason);
       if (Array.isArray(payload.speedHistory)) {
         setSpeedHistory(payload.speedHistory);
       }
@@ -149,6 +161,10 @@ export const QueueProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     if (window.api?.resumeAllQueue) await window.api.resumeAllQueue();
   };
 
+  const resumeQueueCooldown = async (): Promise<void> => {
+    if (window.api?.resumeQueueCooldown) await window.api.resumeQueueCooldown();
+  };
+
   const clearCompleted = async (): Promise<void> => {
     if (window.api?.clearCompletedQueue) await window.api.clearCompletedQueue();
   };
@@ -180,7 +196,10 @@ export const QueueProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         waitingCount,
         activeCount,
         doneCount,
+        warningCount,
         failedCount,
+        cooldownUntil,
+        cooldownReason,
         speedHistory,
         allUnfinishedCount,
         addItem,
@@ -194,6 +213,7 @@ export const QueueProvider: React.FC<{ children: ReactNode }> = ({ children }) =
         startNow,
         pauseAll,
         resumeAll,
+        resumeQueueCooldown,
         clearCompleted,
         toggleGroupCollapse
       }}

@@ -14,8 +14,10 @@ import {
   QueueProgress
 } from '../../shared/types';
 import { queuePersistence } from './persist';
-import { mapYtDlpError } from './errors';
+import { classifyErrorFromStderr } from './errors';
 import { getPlaylistArchiveFilePath } from './playlist';
+import { resolveUniqueOutputPath } from './filename';
+import { splitStreamLines, parseFfmpegStatsLine } from './progressParser';
 
 class QueueManager {
   private items: QueueItem[] = [];
@@ -35,9 +37,16 @@ class QueueManager {
   // Throttled progress broadcasts (max 5 per second per item)
   private lastProgressEmit = new Map<string, number>();
 
+  // D2: Rate limiting cooldown state
+  private cooldownUntil: number | null = null;
+  private cooldownReason: string | null = null;
+  private cooldownTimer: NodeJS.Timeout | null = null;
+  private cooldownAttempt = 0;
+
   constructor() {
     this.initFromStorage();
     this.startSparklineSampler();
+    this.triggerNext();
   }
 
   private initFromStorage() {
@@ -45,6 +54,14 @@ class QueueManager {
     this.items = loaded.items || [];
     this.groups = loaded.groups || [];
     this.order = loaded.order || [];
+
+    // Reset any dangling 'downloading' items to 'waiting' after app restart/crash
+    for (const item of this.items) {
+      if (item.status === 'downloading') {
+        item.status = 'waiting';
+        item.phase = 'Waiting';
+      }
+    }
 
     // Ensure all items are in order array
     for (const group of this.groups) {
@@ -65,7 +82,7 @@ class QueueManager {
       this.speedHistory.shift();
       this.speedHistory.push(currentSpeed);
       // If there are active downloads, broadcast update periodically
-      if (this.activeProcesses.size > 0) {
+      if (this.activeProcesses.size > 0 || this.cooldownUntil) {
         this.broadcastState();
       }
     }, 500);
@@ -97,6 +114,22 @@ class QueueManager {
   }
 
   public addItem(rawItem: Partial<QueueItem> & { url: string; title: string; outputDir: string }): QueueItem {
+    const isFull = Boolean((rawItem as any).isFullVideo || rawItem.clip === null);
+    let clip = rawItem.clip !== undefined
+      ? rawItem.clip
+      : isFull
+        ? null
+        : { startSec: (rawItem as any).startSec || 0, endSec: (rawItem as any).endSec || 0 };
+
+    // Range validation (A3 & Correction 3): out - in >= 1s, in >= 0
+    if (!isFull && clip) {
+      if (clip.endSec - clip.startSec < 1 || clip.startSec < 0) {
+        throw new Error(
+          `Clip range invalid: duration must be at least 1 second (start: ${clip.startSec}s, end: ${clip.endSec}s)`
+        );
+      }
+    }
+
     const fullItem: QueueItem = {
       id: rawItem.id || Math.random().toString(36).substring(2, 9),
       platform: rawItem.platform || 'youtube',
@@ -107,11 +140,12 @@ class QueueManager {
       format: (rawItem.format || 'mp4').toLowerCase() as any,
       quality: rawItem.quality || '1080p',
       mode: rawItem.mode || (['mp3', 'm4a', 'wav'].includes((rawItem.format || '').toLowerCase()) ? 'audio' : 'video'),
-      clip: rawItem.clip !== undefined ? rawItem.clip : ((rawItem as any).isFullVideo ? null : { startSec: (rawItem as any).startSec || 0, endSec: (rawItem as any).endSec || 0 }),
+      clip: isFull ? null : clip,
       outputDir: rawItem.outputDir || (rawItem as any).saveFolder || getYouCutHome(),
       filePath: rawItem.filePath || (rawItem as any).finalPath,
       fileName: rawItem.fileName,
       status: (rawItem.status as any) === 'queued' ? 'waiting' : (rawItem.status || 'waiting'),
+      phase: 'Waiting',
       progress: {
         percent: 0,
         downloadedBytes: 0,
@@ -142,6 +176,8 @@ class QueueManager {
     this.groups.push(group);
     for (const child of children) {
       child.groupId = group.id;
+      child.status = child.status || 'waiting';
+      child.phase = 'Waiting';
       this.items.push(child);
     }
     if (!this.order.includes(group.id)) {
@@ -160,26 +196,21 @@ class QueueManager {
   }
 
   public startNow(targetId: string): void {
-    // If it's a group or item, bring to front of order
     const idx = this.order.indexOf(targetId);
     if (idx > -1) {
       this.order.splice(idx, 1);
       this.order.unshift(targetId);
     }
 
-    // Find the item
+    // If target is child of a group, promote it
     const item = this.items.find((i) => i.id === targetId);
-    if (item && item.status !== 'done') {
-      item.status = 'waiting';
-    } else {
-      // Could be a group
-      const group = this.groups.find((g) => g.id === targetId);
+    if (item && item.groupId) {
+      const group = this.groups.find((g) => g.id === item.groupId);
       if (group) {
-        for (const cid of group.childIds) {
-          const child = this.items.find((i) => i.id === cid);
-          if (child && child.status !== 'done') {
-            child.status = 'waiting';
-          }
+        const cIdx = group.childIds.indexOf(targetId);
+        if (cIdx > -1) {
+          group.childIds.splice(cIdx, 1);
+          group.childIds.unshift(targetId);
         }
       }
     }
@@ -190,7 +221,6 @@ class QueueManager {
   }
 
   public pauseItem(id: string): void {
-    // Check if group
     const group = this.groups.find((g) => g.id === id);
     if (group) {
       for (const cid of group.childIds) {
@@ -220,6 +250,7 @@ class QueueManager {
 
     if (item.status === 'downloading' || item.status === 'waiting') {
       item.status = 'paused';
+      item.phase = 'Paused';
     }
   }
 
@@ -230,6 +261,7 @@ class QueueManager {
         const child = this.items.find((i) => i.id === cid);
         if (child && (child.status === 'paused' || child.status === 'failed')) {
           child.status = 'waiting';
+          child.phase = 'Waiting';
           child.error = undefined;
         }
       }
@@ -237,6 +269,7 @@ class QueueManager {
       const item = this.items.find((i) => i.id === id);
       if (item && (item.status === 'paused' || item.status === 'failed')) {
         item.status = 'waiting';
+        item.phase = 'Waiting';
         item.error = undefined;
       }
     }
@@ -287,13 +320,17 @@ class QueueManager {
       if (active.watchdog) clearTimeout(active.watchdog);
       if (active.process.pid) killProcessTree(active.process.pid);
       const item = this.items.find((i) => i.id === id);
-      if (item) item.status = 'paused';
+      if (item) {
+        item.status = 'paused';
+        item.phase = 'Paused';
+      }
     }
     this.activeProcesses.clear();
 
     for (const item of this.items) {
       if (item.status === 'waiting' || item.status === 'downloading') {
         item.status = 'paused';
+        item.phase = 'Paused';
       }
     }
 
@@ -305,6 +342,7 @@ class QueueManager {
     for (const item of this.items) {
       if (item.status === 'paused') {
         item.status = 'waiting';
+        item.phase = 'Waiting';
       }
     }
 
@@ -316,17 +354,14 @@ class QueueManager {
   public clearCompleted(): void {
     const completedItemIds = new Set(this.items.filter((i) => i.status === 'done').map((i) => i.id));
 
-    // Remove standalone completed items
     this.items = this.items.filter((i) => i.status !== 'done');
 
-    // Clean up empty or fully finished groups
     this.groups = this.groups.filter((g) => {
       const remainingChildren = g.childIds.filter((cid) => !completedItemIds.has(cid));
       g.childIds = remainingChildren;
       return remainingChildren.length > 0;
     });
 
-    // Update order
     const validIds = new Set([...this.items.filter((i) => !i.groupId).map((i) => i.id), ...this.groups.map((g) => g.id)]);
     this.order = this.order.filter((id) => validIds.has(id));
 
@@ -342,13 +377,45 @@ class QueueManager {
     const item = this.items.find((i) => i.id === id);
     if (item) {
       item.status = 'waiting';
+      item.phase = 'Waiting';
       item.attempts = 0;
       item.error = undefined;
+      item.warning = undefined;
       item.progress.percent = 0;
       this.persistQueue();
       this.broadcastState();
       this.triggerNext();
     }
+  }
+
+  public triggerCooldown(reason: string) {
+    this.cooldownAttempt++;
+    if (this.cooldownAttempt > 3) {
+      this.cooldownUntil = null;
+      this.cooldownReason = null;
+      return;
+    }
+
+    const backoffs = [60 * 1000, 5 * 60 * 1000, 15 * 60 * 1000];
+    const duration = backoffs[this.cooldownAttempt - 1] || 60 * 1000;
+    this.cooldownUntil = Date.now() + duration;
+    this.cooldownReason = reason || 'Rate limited by platform';
+
+    if (this.cooldownTimer) clearTimeout(this.cooldownTimer);
+    this.cooldownTimer = setTimeout(() => {
+      this.resumeCooldown();
+    }, duration);
+
+    this.broadcastState();
+  }
+
+  public resumeCooldown() {
+    if (this.cooldownTimer) clearTimeout(this.cooldownTimer);
+    this.cooldownTimer = null;
+    this.cooldownUntil = null;
+    this.cooldownReason = null;
+    this.broadcastState();
+    this.triggerNext();
   }
 
   private persistQueue() {
@@ -360,13 +427,16 @@ class QueueManager {
   }
 
   private triggerNext() {
+    // If cooling down, wait
+    if (this.cooldownUntil && this.cooldownUntil > Date.now()) {
+      return;
+    }
+
     if (this.activeProcesses.size >= this.maxConcurrency) return;
 
-    // Find next waiting item according to order array
     let nextItem: QueueItem | null = null;
 
     for (const entryId of this.order) {
-      // Is it a group?
       const group = this.groups.find((g) => g.id === entryId);
       if (group) {
         for (const childId of group.childIds) {
@@ -378,7 +448,6 @@ class QueueManager {
         }
         if (nextItem) break;
       } else {
-        // Standalone item
         const item = this.items.find((i) => i.id === entryId && i.status === 'waiting');
         if (item && !this.activeProcesses.has(item.id)) {
           nextItem = item;
@@ -387,7 +456,6 @@ class QueueManager {
       }
     }
 
-    // Fallback: any waiting item not yet in order
     if (!nextItem) {
       nextItem = this.items.find((i) => i.status === 'waiting' && !this.activeProcesses.has(i.id)) || null;
     }
@@ -396,7 +464,6 @@ class QueueManager {
 
     this.processItem(nextItem);
 
-    // If concurrency allows, trigger another
     if (this.activeProcesses.size < this.maxConcurrency) {
       this.triggerNext();
     }
@@ -434,10 +501,12 @@ class QueueManager {
 
   private async processItem(item: QueueItem) {
     item.status = 'downloading';
+    item.phase = 'Preparing';
     item.attempts += 1;
     this.broadcastState();
 
     const ytdlpPath = getBinaryPath('yt-dlp');
+    const denoPath = getBinaryPath('deno');
     const ext = item.format.toLowerCase();
     const isAudioOnly = item.mode === 'audio' || ['mp3', 'm4a', 'wav'].includes(ext);
 
@@ -448,28 +517,37 @@ class QueueManager {
       } catch {}
     }
 
-    const outputName = item.fileName ? `${item.fileName}.${ext}` : `${item.title}.${ext}`;
-    const outputFilePath = path.join(item.outputDir, outputName);
+    // A1: Resolve unique final path BEFORE spawning
+    const isClip = Boolean(item.clip && (item.clip.endSec > item.clip.startSec || item.clip.startSec > 0));
+    const unique = resolveUniqueOutputPath(
+      item.outputDir,
+      item.fileName || item.title,
+      ext,
+      item.clip
+    );
+    const outputFilePath = unique.finalPath;
     item.filePath = outputFilePath;
 
-    // Resolve FFmpeg directory so yt-dlp finds ffmpeg & ffprobe on Windows
+    // Resolve FFmpeg directory
     const ffmpegPath = getBinaryPath('ffmpeg');
     const binDir = path.dirname(ffmpegPath);
 
-    // Base yt-dlp arguments per Lessons 1, 4, 7
+    // yt-dlp arguments per Part G (Deno runtime), Part D3 (gentle sleep for groups)
     const args: string[] = [
       '--newline',
       '--no-playlist',
+      '--no-mtime',
       '--ffmpeg-location', binDir,
-      '--js-runtimes', 'node',
+      '--js-runtimes', `deno:${denoPath}`,
       '--concurrent-fragments', this.concurrentFragments.toString(),
       '--continue',
       '--progress-template',
-      'download:{"percent":"%(progress._percent_str)s","downloaded":"%(progress.downloaded_bytes)s","total":"%(progress.total_bytes)s","speed":"%(progress._speed_str)s","eta":"%(progress._eta_str)s"}'
+      'download:progress:{"percent":"%(progress._percent_str)s","downloaded":"%(progress.downloaded_bytes)s","total":"%(progress.total_bytes)s","speed":"%(progress._speed_str)s","eta":"%(progress._eta_str)s"}'
     ];
 
-    // Playlist archive handling: skip already downloaded
+    // Gentle batching for playlists
     if (item.groupId) {
+      args.push('--sleep-interval', '3', '--max-sleep-interval', '8', '--sleep-requests', '1');
       const group = this.groups.find((g) => g.id === item.groupId);
       if (group && group.options.skipAlreadyDownloaded) {
         const archiveFile = getPlaylistArchiveFilePath(group.id);
@@ -478,7 +556,7 @@ class QueueManager {
     }
 
     // Section clipping
-    if (item.clip && (item.clip.startSec > 0 || item.clip.endSec > 0)) {
+    if (isClip && item.clip) {
       args.push('--download-sections', `*${item.clip.startSec}-${item.clip.endSec}`);
       const isExact = item.frameAccurate || item.clip.endSec <= 600;
       if (isExact) {
@@ -494,13 +572,23 @@ class QueueManager {
       args.push('--merge-output-format', ext === 'mov' ? 'mov' : 'mp4');
     }
 
-    args.push('-o', outputFilePath);
+    // Output template
+    args.push('-o', `${unique.outputTemplatePath}.%(ext)s`);
     args.push(item.url);
 
-    console.log(`[Queue] Starting download PID for "${item.title}"`);
-    console.log(`[Queue CMD]: ${ytdlpPath} ${args.join(' ')}`);
+    console.log(`[Queue] Starting download for "${item.title}" -> ${outputFilePath}`);
 
-    const child = spawn(ytdlpPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    const jobStartedAtMs = Date.now();
+    const childEnv = {
+      ...process.env,
+      PYTHONIOENCODING: 'utf-8'
+    };
+
+    const child = spawn(ytdlpPath, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: childEnv
+    });
+
     this.activeProcesses.set(item.id, { process: child, watchdog: null });
 
     if (child.pid) {
@@ -508,54 +596,98 @@ class QueueManager {
       this.resetWatchdog(item, child.pid);
     }
 
+    let stdoutAccumulator = '';
     let stderrBuffer = '';
+    let lastFfmpegBytes = 0;
+    let lastFfmpegTimeMs = Date.now();
+    const clipLengthSec = isClip && item.clip ? Math.max(1, item.clip.endSec - item.clip.startSec) : item.durationSec;
 
     child.stdout?.on('data', (data) => {
       if (child.pid) this.resetWatchdog(item, child.pid);
+      const text = data.toString('utf-8');
+      stdoutAccumulator += text;
 
-      const lines = data.toString().split('\n');
+      const lines = splitStreamLines(text);
       for (const line of lines) {
-        const trimmed = line.trim();
-        if (trimmed.startsWith('download:{')) {
+        if (line.startsWith('progress:{') || line.startsWith('download:{') || line.startsWith('{"percent"')) {
           try {
-            const jsonStr = trimmed.replace('download:', '');
+            const jsonStr = line.startsWith('progress:')
+              ? line.replace('progress:', '')
+              : line.startsWith('download:')
+                ? line.replace('download:', '')
+                : line;
             const parsed = JSON.parse(jsonStr);
 
             const percentStr = (parsed.percent || '0%').replace('%', '').trim();
             const pct = Math.min(100, Math.max(0, Math.round(parseFloat(percentStr) || 0)));
             const downloaded = parseInt(parsed.downloaded, 10) || 0;
             const total = parseInt(parsed.total, 10) || 0;
-
-            // Speed parsing
             const speedStr = (parsed.speed || '—').trim();
             const etaStr = (parsed.eta || '—').trim();
 
+            item.phase = 'Downloading';
             item.progress.percent = pct;
             item.progress.downloadedBytes = downloaded;
             item.progress.totalBytes = total;
             item.progress.speed = speedStr;
             item.progress.eta = etaStr;
 
-            // Record rolling speed sample
             this.speedSamples.push({ time: Date.now(), bytes: downloaded });
             const cutoff = Date.now() - 3000;
             this.speedSamples = this.speedSamples.filter((s) => s.time >= cutoff);
 
-            // Throttle progress events to max 5 per second per item
-            const now = Date.now();
-            const lastEmit = this.lastProgressEmit.get(item.id) || 0;
-            if (now - lastEmit >= 200) {
-              this.lastProgressEmit.set(item.id, now);
-              this.broadcastState();
-            }
+            this.throttleBroadcast(item.id);
           } catch {}
+        } else if (isClip && (line.includes('time=') || line.includes('size='))) {
+          const parsed = parseFfmpegStatsLine(line, clipLengthSec, lastFfmpegBytes, lastFfmpegTimeMs);
+          if (parsed) {
+            lastFfmpegBytes = parsed.downloadedBytes;
+            lastFfmpegTimeMs = Date.now();
+            item.phase = 'Merging';
+            item.progress.percent = parsed.percent;
+            item.progress.downloadedBytes = parsed.downloadedBytes;
+            item.progress.totalBytes = parsed.totalBytes;
+            item.progress.speed = parsed.speed;
+            item.progress.eta = parsed.eta;
+
+            this.speedSamples.push({ time: Date.now(), bytes: parsed.downloadedBytes });
+            const cutoff = Date.now() - 3000;
+            this.speedSamples = this.speedSamples.filter((s) => s.time >= cutoff);
+
+            this.throttleBroadcast(item.id);
+          }
         }
       }
     });
 
     child.stderr?.on('data', (data) => {
       if (child.pid) this.resetWatchdog(item, child.pid);
-      stderrBuffer += data.toString();
+      const text = data.toString('utf-8');
+      stderrBuffer += text;
+
+      // FFmpeg stats are emitted to stderr with \r
+      const lines = splitStreamLines(text);
+      for (const line of lines) {
+        if (isClip && (line.includes('time=') || line.includes('size='))) {
+          const parsed = parseFfmpegStatsLine(line, clipLengthSec, lastFfmpegBytes, lastFfmpegTimeMs);
+          if (parsed) {
+            lastFfmpegBytes = parsed.downloadedBytes;
+            lastFfmpegTimeMs = Date.now();
+            item.phase = 'Merging';
+            item.progress.percent = parsed.percent;
+            item.progress.downloadedBytes = parsed.downloadedBytes;
+            item.progress.totalBytes = parsed.totalBytes;
+            item.progress.speed = parsed.speed;
+            item.progress.eta = parsed.eta;
+
+            this.speedSamples.push({ time: Date.now(), bytes: parsed.downloadedBytes });
+            const cutoff = Date.now() - 3000;
+            this.speedSamples = this.speedSamples.filter((s) => s.time >= cutoff);
+
+            this.throttleBroadcast(item.id);
+          }
+        }
+      }
     });
 
     child.on('close', async (exitCode) => {
@@ -567,7 +699,9 @@ class QueueManager {
       console.log(`[Queue] Process exited code ${exitCode} for "${item.title}"`);
 
       if (exitCode === 0) {
-        await this.handleProcessSuccess(item, outputFilePath, isAudioOnly);
+        item.phase = 'Validating';
+        this.broadcastState();
+        await this.handleProcessSuccess(item, outputFilePath, isAudioOnly, jobStartedAtMs, stdoutAccumulator);
       } else {
         if (item.status !== 'paused' && item.status !== 'canceled') {
           this.handleProcessFailure(item, stderrBuffer || `Process exited with code ${exitCode}`);
@@ -580,19 +714,54 @@ class QueueManager {
     });
   }
 
-  private async handleProcessSuccess(item: QueueItem, outputFilePath: string, isAudioOnly: boolean) {
+  private throttleBroadcast(itemId: string) {
+    const now = Date.now();
+    const lastEmit = this.lastProgressEmit.get(itemId) || 0;
+    if (now - lastEmit >= 200) {
+      this.lastProgressEmit.set(itemId, now);
+      this.broadcastState();
+    }
+  }
+
+  private async handleProcessSuccess(
+    item: QueueItem,
+    outputFilePath: string,
+    isAudioOnly: boolean,
+    jobStartedAtMs: number,
+    stdout: string
+  ) {
     const expectedDuration = item.clip ? Math.max(1, item.clip.endSec - item.clip.startSec) : item.durationSec;
-    const validation = await validateOutputWithFFprobe(
-      outputFilePath,
-      expectedDuration,
+    const isClip = Boolean(item.clip && (item.clip.endSec > item.clip.startSec || item.clip.startSec > 0));
+
+    // A2 & Correction 1: ffprobe and metadata validation
+    const validation = await validateOutputWithFFprobe({
+      filePath: outputFilePath,
+      expectedDurationSec: expectedDuration,
       isAudioOnly,
-      item.frameAccurate || expectedDuration <= 600
-    );
+      isExactCut: item.frameAccurate || expectedDuration <= 600,
+      isFullVideo: !isClip,
+      jobStartedAtMs,
+      stdout
+    });
+
+    if (!validation.valid) {
+      console.warn(`[Queue] Validation failed for "${item.title}": ${validation.warning}`);
+      item.status = 'warning';
+      item.phase = 'Warning';
+      item.warning = validation.warning || 'Output validation failed';
+      item.progress.percent = 100;
+      item.finishedAt = Date.now();
+      item.sizeBytes = validation.fileSizeBytes || (fs.existsSync(outputFilePath) ? fs.statSync(outputFilePath).size : 0);
+      // DO NOT record as history success
+      return;
+    }
 
     item.status = 'done';
+    item.phase = 'Done';
     item.progress.percent = 100;
     item.finishedAt = Date.now();
-    item.sizeBytes = validation.fileSizeBytes || (fs.existsSync(outputFilePath) ? fs.statSync(outputFilePath).size : 0);
+    item.sizeBytes = validation.fileSizeBytes;
+    item.durationSec = validation.durationSeconds || expectedDuration;
 
     // Record in History
     historyStore.add({
@@ -612,7 +781,6 @@ class QueueManager {
       endSec: item.clip?.endSec
     });
 
-    // Notify user if group finished or standalone item finished
     if (this.notificationsEnabled && Notification.isSupported()) {
       new Notification({
         title: 'Download Completed',
@@ -622,29 +790,39 @@ class QueueManager {
   }
 
   private handleProcessFailure(item: QueueItem, rawError: string) {
-    // Backoff auto-retry (3 attempts: 2s, 8s, 30s)
-    if (item.attempts < 3) {
-      const delays = [2000, 8000, 30000];
-      const delay = delays[item.attempts - 1] || 5000;
-      console.warn(`[Queue] Item "${item.title}" failed attempt ${item.attempts}. Retrying in ${delay / 1000}s...`);
+    const classified = classifyErrorFromStderr(rawError, item.attempts);
+    item.stderrTail = classified.stderrTail;
 
+    if (classified.isRateLimit) {
+      item.status = 'failed';
+      item.phase = 'Failed';
+      item.error = `${classified.message} · ${classified.suggestedAction}`;
+      console.warn(`[Queue] Rate limit detected for "${item.title}": ${classified.message}`);
+      this.triggerCooldown(classified.message);
+      return;
+    }
+
+    // Normal transient errors: backoff retry once after 5s
+    if (item.attempts < 2) {
+      console.warn(`[Queue] Item "${item.title}" failed attempt ${item.attempts}. Retrying in 5s...`);
       item.status = 'waiting';
-      item.error = `Retrying (attempt ${item.attempts + 1} of 3)...`;
+      item.phase = 'Waiting';
+      item.error = `Retrying in 5s... (${classified.message})`;
       setTimeout(() => {
         if (item.status === 'waiting') {
           this.triggerNext();
         }
-      }, delay);
+      }, 5000);
     } else {
       item.status = 'failed';
-      item.error = mapYtDlpError(rawError, item.attempts);
-      console.error(`[Queue] Item "${item.title}" permanently failed after 3 attempts: ${item.error}`);
+      item.phase = 'Failed';
+      item.error = `${classified.message} · ${classified.suggestedAction}`;
+      console.error(`[Queue] Item "${item.title}" permanently failed: ${item.error}`);
     }
   }
 
   private calculateOverallSpeedBps(): number {
     if (this.speedSamples.length < 2) {
-      // Fallback: estimate from active items
       let totalBps = 0;
       for (const item of this.items) {
         if (item.status === 'downloading' && item.progress.speed && item.progress.speed !== '—') {
@@ -672,7 +850,7 @@ class QueueManager {
   }
 
   private formatSpeed(bps: number): string {
-    if (!bps || bps <= 0) return '0 MB/s';
+    if (!bps || bps <= 0) return '—';
     if (bps >= 1024 * 1024 * 1024) {
       return `${(bps / (1024 * 1024 * 1024)).toFixed(1)} GB/s`;
     }
@@ -698,14 +876,15 @@ class QueueManager {
     const activeItems = this.items.filter((i) => i.status === 'downloading');
     const waitingItems = this.items.filter((i) => i.status === 'waiting');
     const doneItems = this.items.filter((i) => i.status === 'done');
+    const warningItems = this.items.filter((i) => i.status === 'warning');
     const failedItems = this.items.filter((i) => i.status === 'failed');
 
-    const overallSpeedBps = this.calculateOverallSpeedBps();
+    const overallSpeedBps = activeItems.length > 0 ? this.calculateOverallSpeedBps() : 0;
 
     // Remaining bytes across all active and waiting items
     let remainingBytes = 0;
     for (const item of [...activeItems, ...waitingItems]) {
-      const total = item.progress.totalBytes || item.sizeBytes || 40 * 1024 * 1024; // 40MB estimate fallback
+      const total = item.progress.totalBytes || item.sizeBytes || 40 * 1024 * 1024;
       const downloaded = item.progress.downloadedBytes || 0;
       remainingBytes += Math.max(0, total - downloaded);
     }
@@ -717,13 +896,16 @@ class QueueManager {
       groups: this.groups,
       order: this.order,
       overallSpeedBps,
-      overallSpeedFormatted: this.formatSpeed(overallSpeedBps),
+      overallSpeedFormatted: activeItems.length > 0 ? this.formatSpeed(overallSpeedBps) : '—',
       overallEtaSec: etaSec,
-      overallEtaFormatted: etaSec > 0 ? `≈ ${this.formatTime(etaSec)}` : 'calculating...',
+      overallEtaFormatted: activeItems.length > 0 && etaSec > 0 ? `≈ ${this.formatTime(etaSec)}` : 'calculating...',
       waitingCount: waitingItems.length,
       activeCount: activeItems.length,
       doneCount: doneItems.length,
+      warningCount: warningItems.length,
       failedCount: failedItems.length,
+      cooldownUntil: this.cooldownUntil || undefined,
+      cooldownReason: this.cooldownReason || undefined,
       speedHistory: [...this.speedHistory]
     };
   }

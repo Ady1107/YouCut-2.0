@@ -1,7 +1,12 @@
 import { describe, it, expect } from 'vitest';
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
 import { detectPlaylistUrl } from '../src/main/download/playlist';
 import { mapYtDlpError } from '../src/main/download/errors';
-import { sanitizeFilename } from '../src/renderer/src/utils/filename';
+import { sanitizeFilename, formatClipStamp } from '../src/shared/filename';
+import { resolveUniqueOutputPath } from '../src/main/download/filename';
+import { validateOutputWithFFprobe } from '../src/main/download/validator';
 
 describe('Playlist URL Detection', () => {
   it('detects pure playlist URLs', () => {
@@ -48,57 +53,143 @@ describe('Error Mapping & Retry Backoff', () => {
   });
 });
 
-describe('Filename Numbering & Sanitization', () => {
-  it('pads file numbers based on playlist size and sanitizes characters', () => {
-    const totalCount = 18;
-    const zeroPadWidth = totalCount.toString().length;
-    const index = 7;
-    const rawTitle = 'Time (Inception): The Soundtrack? <Special> / Cut';
+describe('Unique Output Filename Resolution & Deduplication (Part A1)', () => {
+  it('formats clip stamp with HH.MM.SS-HH.MM.SS', () => {
+    const stamp = formatClipStamp(2, 21);
+    expect(stamp).toBe('[00.00.02-00.00.21]');
+  });
 
-    const paddedIndex = index.toString().padStart(zeroPadWidth, '0');
-    const cleanTitle = sanitizeFilename(rawTitle, 60);
-    const finalFilename = `${paddedIndex} - ${cleanTitle}.mp3`;
+  it('appends clip stamp and deduplicates when file exists on disk', () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'youcut-test-'));
+    const title = 'Sample Video';
+    const clip = { startSec: 2, endSec: 21 };
 
-    expect(paddedIndex).toBe('07');
-    expect(finalFilename).not.toContain(':');
-    expect(finalFilename).not.toContain('?');
-    expect(finalFilename).not.toContain('<');
-    expect(finalFilename).not.toContain('>');
-    expect(finalFilename).not.toContain('/');
-    expect(finalFilename.startsWith('07 - Time (Inception)')).toBe(true);
+    // First clip
+    const r1 = resolveUniqueOutputPath(tmpDir, title, 'mp4', clip);
+    expect(r1.finalPath).toContain('[00.00.02-00.00.21].mp4');
+    fs.writeFileSync(r1.finalPath, 'dummy data 1');
+
+    // Second clip with same range -> should append " (2)"
+    const r2 = resolveUniqueOutputPath(tmpDir, title, 'mp4', clip);
+    expect(r2.finalPath).toContain('[00.00.02-00.00.21] (2).mp4');
+    fs.writeFileSync(r2.finalPath, 'dummy data 2');
+
+    // Third clip with same range -> should append " (3)"
+    const r3 = resolveUniqueOutputPath(tmpDir, title, 'mp4', clip);
+    expect(r3.finalPath).toContain('[00.00.02-00.00.21] (3).mp4');
+
+    // Full video download of same title -> should be "Sample Video.mp4" (no stamp)
+    const rFull = resolveUniqueOutputPath(tmpDir, title, 'mp4', null);
+    expect(path.basename(rFull.finalPath)).toBe('Sample Video.mp4');
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });
 
-describe('Group Progress Calculation', () => {
-  it('computes group progress accurately across finished and active fraction', () => {
-    const totalVideos = 18;
-    const finishedCount = 6;
-    const currentChildProgressPercent = 58; // 0.58
+describe('Validation Engine & Correction 1 Unit Tests', () => {
+  it('FAILS validation when file predates job start', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'youcut-val-'));
+    const testFile = path.join(tmpDir, 'old-file.mp4');
+    fs.writeFileSync(testFile, 'dummy content');
 
-    const activeFraction = currentChildProgressPercent / 100;
-    const groupProgress = Math.min(100, Math.round(((finishedCount + activeFraction) / totalVideos) * 100));
+    // Set file time to 10 seconds ago
+    const tenSecsAgo = (Date.now() - 10000) / 1000;
+    fs.utimesSync(testFile, tenSecsAgo, tenSecsAgo);
 
-    // (6 + 0.58) / 18 = 6.58 / 18 = 0.3655 -> 37% (or ~38% if finished = 6.84)
-    expect(groupProgress).toBe(37);
+    const jobStartedAtMs = Date.now();
+    const result = await validateOutputWithFFprobe({
+      filePath: testFile,
+      expectedDurationSec: 10,
+      isAudioOnly: false,
+      isExactCut: true,
+      jobStartedAtMs
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.warning).toContain('predates job start');
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('FAILS validation when stdout reports "has already been downloaded"', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'youcut-val-'));
+    const testFile = path.join(tmpDir, 'existing.mp4');
+    fs.writeFileSync(testFile, 'dummy content');
+
+    const result = await validateOutputWithFFprobe({
+      filePath: testFile,
+      expectedDurationSec: 10,
+      isAudioOnly: false,
+      isExactCut: true,
+      stdout: '[download] Sample.mp4 has already been downloaded'
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.warning).toContain('already downloaded');
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('FAILS validation on wrong-length media file (duration discrepancy)', async () => {
+    // If a 5.0s file is presented for a 10s exact cut request, tolerance is 1.0s, so diff 5.0s > 1.0s fails
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'youcut-val-'));
+    const testFile = path.join(tmpDir, 'clip.mp4');
+
+    // Generate a real 5-second test video with ffmpeg
+    const ffmpegPath = path.resolve('resources/bin/ffmpeg.exe');
+    if (fs.existsSync(ffmpegPath)) {
+      const { execFileSync } = await import('child_process');
+      execFileSync(ffmpegPath, [
+        '-y',
+        '-f', 'lavfi',
+        '-i', 'testsrc=duration=5:size=320x240:rate=30',
+        '-f', 'lavfi',
+        '-i', 'sine=frequency=1000:duration=5',
+        '-c:v', 'libx264',
+        '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac',
+        testFile
+      ], { stdio: 'ignore' });
+
+      // Request 10.0 seconds exact cut
+      const result = await validateOutputWithFFprobe({
+        filePath: testFile,
+        expectedDurationSec: 10,
+        isAudioOnly: false,
+        isExactCut: true,
+        isFullVideo: false,
+        jobStartedAtMs: Date.now() - 5000
+      });
+
+      expect(result.valid).toBe(false);
+      expect(result.warning).toContain('Duration discrepancy');
+      expect(result.warning).toContain('diff');
+    }
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });
 
-describe('Size Estimation Formula', () => {
-  it('calculates audio size based on bitrate and duration', () => {
-    // 10 videos, each 4 minutes = 2400 seconds
-    const durationSec = 2400;
-    // 256 kbps = 32 KB/sec
-    const sizeBytes = durationSec * 32 * 1024;
-    const sizeMb = sizeBytes / (1024 * 1024);
-    expect(Math.round(sizeMb)).toBe(75); // ~75 MB
-  });
+describe('Hindi & Unicode Character Encoding (Part F)', () => {
+  it('preserves exact Hindi Unicode characters on disk and cleans invalid chars', () => {
+    const hindiTitle = 'त्योहारों पर घर नहीं गए, तो रिश्तेदार क्या कहेंगे?';
+    const sanitized = sanitizeFilename(hindiTitle, 100);
 
-  it('calculates video size based on 1080p profile', () => {
-    // 2400 seconds
-    const durationSec = 2400;
-    // 426 KB/sec
-    const sizeBytes = durationSec * 426 * 1024;
-    const sizeMb = sizeBytes / (1024 * 1024);
-    expect(Math.round(sizeMb)).toBe(998); // ~1 GB (998 MB)
+    // Invalid Windows char '?' must be removed or replaced, while Hindi characters must remain untouched
+    expect(sanitized).not.toContain('?');
+    expect(sanitized).toContain('त्योहारों');
+    expect(sanitized).toContain('रिश्तेदार');
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'youcut-hindi-'));
+    const filePath = path.join(tmpDir, `${sanitized}.mp4`);
+    fs.writeFileSync(filePath, 'hindi test content', 'utf-8');
+
+    // Verify it exists on disk and reads back identically
+    expect(fs.existsSync(filePath)).toBe(true);
+    const dirFiles = fs.readdirSync(tmpDir);
+    expect(dirFiles[0]).toBe(`${sanitized}.mp4`);
+    expect(dirFiles[0]).toContain('त्योहारों');
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });

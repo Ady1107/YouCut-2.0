@@ -73,8 +73,33 @@ export const QueueRoute: React.FC = () => {
     startNow,
     pauseAll,
     resumeAll,
-    clearCompleted
+    resumeQueueCooldown,
+    clearCompleted,
+    cooldownUntil,
+    cooldownReason
   } = useQueue();
+
+  const [cooldownSec, setCooldownSec] = useState<number>(0);
+
+  useEffect(() => {
+    if (!cooldownUntil || cooldownUntil <= Date.now()) {
+      setCooldownSec(0);
+      return;
+    }
+    const update = () => {
+      const remaining = Math.max(0, Math.ceil((cooldownUntil - Date.now()) / 1000));
+      setCooldownSec(remaining);
+    };
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [cooldownUntil]);
+
+  const formatCooldown = (sec: number) => {
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
 
   // Filter tab state persisted in localStorage
   const [activeFilter, setActiveFilter] = useState<QueueFilterTab>(() => {
@@ -176,18 +201,18 @@ export const QueueRoute: React.FC = () => {
 
     return allCards.filter((card) => {
       if (card.type === 'item') {
-        if (activeFilter === 'downloading') return card.item.status === 'downloading';
-        if (activeFilter === 'waiting') return card.item.status === 'waiting' || card.item.status === 'paused';
+        if (activeFilter === 'downloading') return card.item.status === 'downloading' || card.item.status === 'paused';
+        if (activeFilter === 'waiting') return card.item.status === 'waiting';
         if (activeFilter === 'done') return card.item.status === 'done';
         if (activeFilter === 'failed') return card.item.status === 'failed';
         return true;
       } else {
         // Group matches if any child matches status
         if (activeFilter === 'downloading') {
-          return card.children.some((c) => c.status === 'downloading');
+          return card.children.some((c) => c.status === 'downloading' || c.status === 'paused');
         }
         if (activeFilter === 'waiting') {
-          return card.children.some((c) => c.status === 'waiting' || c.status === 'paused');
+          return card.children.some((c) => c.status === 'waiting');
         }
         if (activeFilter === 'done') {
           return card.children.every((c) => c.status === 'done');
@@ -223,29 +248,28 @@ export const QueueRoute: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-2 flex-none">
-          {isAnyDownloading || isAnyPaused ? (
-            isAnyPaused && !isAnyDownloading ? (
-              <Button
-                variant="secondary"
-                size="md"
-                onClick={resumeAll}
-                className="flex items-center gap-2 font-medium"
-              >
-                <PlayIcon size={14} />
-                <span>Resume all</span>
-              </Button>
-            ) : (
-              <Button
-                variant="secondary"
-                size="md"
-                onClick={pauseAll}
-                className="flex items-center gap-2 font-medium"
-              >
-                <PauseIcon size={14} />
-                <span>Pause all</span>
-              </Button>
-            )
-          ) : null}
+          {isAnyPaused ? (
+            <Button
+              variant="secondary"
+              size="md"
+              onClick={resumeAll}
+              className="flex items-center gap-2 font-medium"
+            >
+              <PlayIcon size={14} />
+              <span>Resume all</span>
+            </Button>
+          ) : (
+            <Button
+              variant="secondary"
+              size="md"
+              disabled={!isAnyDownloading && waitingCount === 0}
+              onClick={pauseAll}
+              className="flex items-center gap-2 font-medium disabled:opacity-40"
+            >
+              <PauseIcon size={14} />
+              <span>Pause all</span>
+            </Button>
+          )}
 
           <Button
             variant="ghost"
@@ -258,6 +282,27 @@ export const QueueRoute: React.FC = () => {
           </Button>
         </div>
       </div>
+
+      {/* Rate limit cooldown countdown banner (D2) */}
+      {cooldownSec > 0 && (
+        <div className="p-3.5 sm:p-4 rounded-[16px] bg-status-dangerTint border border-status-danger/40 flex items-center justify-between shadow-sm">
+          <div className="flex items-center gap-2.5 text-status-danger font-medium text-xs sm:text-sm">
+            <span className="w-2 h-2 rounded-full bg-status-danger animate-pulse flex-none" />
+            <span>
+              {cooldownReason || 'Rate limited by platform'}. Resuming in{' '}
+              <strong className="font-mono font-bold">{formatCooldown(cooldownSec)}</strong>
+            </span>
+          </div>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={resumeQueueCooldown}
+            className="text-xs font-semibold flex-none"
+          >
+            Resume now
+          </Button>
+        </div>
+      )}
 
       {/* Overview Strip Card */}
       <Card className="p-4 sm:p-5 rounded-[18px] bg-card border-border-strong flex items-center justify-between shadow-sm">
@@ -363,8 +408,8 @@ export const QueueRoute: React.FC = () => {
                 }
 
                 const item = card.item;
-                const isDownloading = item.status === 'downloading';
-                const isWaiting = item.status === 'waiting' || item.status === 'paused';
+                const isDownloading = item.status === 'downloading' || item.status === 'paused';
+                const isWaiting = item.status === 'waiting';
                 const isDone = item.status === 'done';
                 const isFailed = item.status === 'failed';
 
@@ -399,7 +444,7 @@ export const QueueRoute: React.FC = () => {
                   );
                 }
 
-                if (isDone) {
+                if (isDone || item.status === 'warning') {
                   return (
                     <SortableCardWrapper key={item.id} id={item.id}>
                       {() => (

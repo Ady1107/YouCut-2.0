@@ -92,9 +92,31 @@ export const YouTubeRoute: React.FC = () => {
 
   const isVideoLoaded = Boolean(videoInfo);
   const totalDuration = videoInfo ? videoInfo.duration : 0;
-  const startSec = hmsToSeconds(startTime);
-  const endSec = hmsToSeconds(endTime) || totalDuration;
-  const clipDuration = Math.max(0, endSec - startSec);
+  const parsedStart = hmsToSeconds(startTime);
+  const startSec = isNaN(parsedStart) ? 0 : parsedStart;
+  const parsedEnd = hmsToSeconds(endTime);
+  const endSec = isNaN(parsedEnd) ? totalDuration : parsedEnd;
+  const clipDuration = endSec - startSec;
+  const isRangeValid = isFullVideo || (clipDuration >= 1 && startSec >= 0 && endSec <= totalDuration);
+  const [duplicateRecord, setDuplicateRecord] = useState<any | null>(null);
+
+  useEffect(() => {
+    if (!videoInfo || !currentUrl || !window.api?.checkHistoryDuplicate) {
+      setDuplicateRecord(null);
+      return;
+    }
+    let active = true;
+    window.api.checkHistoryDuplicate(
+      currentUrl,
+      selectedFormat,
+      isFullVideo,
+      isFullVideo ? undefined : startSec,
+      isFullVideo ? undefined : endSec
+    ).then((match) => {
+      if (active) setDuplicateRecord(match || null);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [videoInfo, currentUrl, selectedFormat, isFullVideo, startSec, endSec]);
 
   // Load real default save folder from native system
   useEffect(() => {
@@ -475,8 +497,6 @@ export const YouTubeRoute: React.FC = () => {
     const sec = hmsToSeconds(startTime);
     if (isNaN(sec) || sec < 0) {
       setStartTime('00:00:00');
-    } else if (sec >= endSec) {
-      setStartTime(secondsToHms(Math.max(0, endSec - 1)));
     } else {
       setStartTime(secondsToHms(sec));
     }
@@ -493,10 +513,8 @@ export const YouTubeRoute: React.FC = () => {
 
   const handleEndTimeBlur = () => {
     const sec = hmsToSeconds(endTime);
-    if (isNaN(sec) || sec > totalDuration) {
+    if (isNaN(sec)) {
       setEndTime(secondsToHms(totalDuration));
-    } else if (sec <= startSec) {
-      setEndTime(secondsToHms(Math.min(totalDuration, startSec + 1)));
     } else {
       setEndTime(secondsToHms(sec));
     }
@@ -631,6 +649,10 @@ export const YouTubeRoute: React.FC = () => {
   // Add to Queue handler
   const handleAddToQueue = async () => {
     if (!videoInfo) return;
+    if (!isRangeValid) {
+      showToast('Clip duration must be at least 1 second (End must be after Start)', 'error');
+      return;
+    }
     const finalStart = isFullVideo ? 0 : startSec;
     const finalEnd = isFullVideo ? totalDuration : endSec;
 
@@ -1136,6 +1158,7 @@ export const YouTubeRoute: React.FC = () => {
                 </div>
                 <input
                   type="text"
+                  data-testid="start-time-input"
                   value={isFullVideo ? '00:00:00' : startTime}
                   disabled={isFullVideo || !isVideoLoaded}
                   onChange={(e) => handleStartTimeInputChange(e.target.value)}
@@ -1179,6 +1202,7 @@ export const YouTubeRoute: React.FC = () => {
                 </div>
                 <input
                   type="text"
+                  data-testid="end-time-input"
                   value={isFullVideo && videoInfo ? videoInfo.durationFormatted : endTime}
                   disabled={isFullVideo || !isVideoLoaded}
                   onChange={(e) => handleEndTimeInputChange(e.target.value)}
@@ -1436,12 +1460,45 @@ export const YouTubeRoute: React.FC = () => {
             </span>
           </div>
 
+          {/* Duplicate Download Notice (A4) */}
+          {duplicateRecord && (
+            <div className="mb-2 p-2.5 rounded-lg border border-border bg-card flex flex-col gap-1 text-[11px]">
+              <span className="text-foreground-muted">
+                You already downloaded this {isFullVideo ? 'video' : 'clip'} ({duplicateRecord.format} · {duplicateRecord.durationFormatted})
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => window.api?.openFolder(duplicateRecord.filePath)}
+                  className="text-accent hover:underline font-medium"
+                >
+                  Open in folder
+                </button>
+                <span className="text-foreground-muted">·</span>
+                <button
+                  type="button"
+                  onClick={handleAddToQueue}
+                  className="text-foreground hover:underline font-medium"
+                >
+                  Download again
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Invalid Range Inline Notice (A3) */}
+          {!isRangeValid && isVideoLoaded && (
+            <div className="text-[12px] text-danger font-medium text-center py-1">
+              Clip duration must be at least 1s (End &gt; Start)
+            </div>
+          )}
+
           {/* Pinned Action Buttons */}
           <div className="flex flex-col gap-2 mt-auto pt-2">
             <Button
               variant="secondary"
               size="lg"
-              disabled={!isVideoLoaded}
+              disabled={!isVideoLoaded || !isRangeValid}
               onClick={handleAddToQueue}
               className="w-full flex items-center justify-center gap-2"
             >
@@ -1452,7 +1509,7 @@ export const YouTubeRoute: React.FC = () => {
             <Button
               variant="primary"
               size="lg"
-              disabled={!isVideoLoaded}
+              disabled={!isVideoLoaded || !isRangeValid}
               onClick={handleDownloadNow}
               className="w-full flex items-center justify-center gap-2 font-bold"
             >

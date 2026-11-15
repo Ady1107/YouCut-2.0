@@ -17,6 +17,7 @@ if (!fs.existsSync(binDir)) {
 const YTDLP_URL = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe';
 const FFMPEG_ZIP_URL = 'https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-essentials_build.zip';
 const FFMPEG_FALLBACK_URL = 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip';
+const DENO_ZIP_URL = 'https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip';
 
 async function downloadFile(url, destPath) {
   console.log(`Downloading from ${url} ...`);
@@ -117,15 +118,40 @@ async function fetchFfmpeg() {
   }
 }
 
+async function fetchDeno() {
+  const denoDest = path.join(binDir, 'deno.exe');
+  if (fs.existsSync(denoDest) && fs.statSync(denoDest).size > 1000000) {
+    console.log(`deno.exe already present in ${binDir}`);
+    return;
+  }
+  const zipPath = path.join(binDir, 'deno.zip');
+  try {
+    await downloadFile(DENO_ZIP_URL, zipPath);
+    console.log('Extracting deno.zip via PowerShell...');
+    execFileSync('powershell.exe', [
+      '-NoProfile',
+      '-Command',
+      `Expand-Archive -Path "${zipPath}" -DestinationPath "${binDir}" -Force`
+    ]);
+    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    console.log(`deno.exe successfully installed to ${denoDest}`);
+  } catch (err) {
+    if (fs.existsSync(zipPath)) fs.unlinkSync(zipPath);
+    throw new Error(`Failed to fetch deno: ${err.message}`);
+  }
+}
+
 async function verifyBinaries() {
   console.log('\n--- Verifying Installed Binaries ---');
   const ytdlpPath = path.join(binDir, 'yt-dlp.exe');
   const ffmpegPath = path.join(binDir, 'ffmpeg.exe');
   const ffprobePath = path.join(binDir, 'ffprobe.exe');
+  const denoPath = path.join(binDir, 'deno.exe');
 
   if (!fs.existsSync(ytdlpPath)) throw new Error(`Missing yt-dlp.exe at ${ytdlpPath}`);
   if (!fs.existsSync(ffmpegPath)) throw new Error(`Missing ffmpeg.exe at ${ffmpegPath}`);
   if (!fs.existsSync(ffprobePath)) throw new Error(`Missing ffprobe.exe at ${ffprobePath}`);
+  if (!fs.existsSync(denoPath)) throw new Error(`Missing deno.exe at ${denoPath}`);
 
   const ytdlpVer = execFileSync(ytdlpPath, ['--version'], { encoding: 'utf-8' }).trim();
   console.log(`[PASS] yt-dlp version: ${ytdlpVer}`);
@@ -137,6 +163,10 @@ async function verifyBinaries() {
   const ffprobeOut = execFileSync(ffprobePath, ['-version'], { encoding: 'utf-8' });
   const ffprobeFirstLine = ffprobeOut.split('\n')[0].trim();
   console.log(`[PASS] ffprobe: ${ffprobeFirstLine}`);
+
+  const denoOut = execFileSync(denoPath, ['--version'], { encoding: 'utf-8' });
+  const denoFirstLine = denoOut.split('\n')[0].trim();
+  console.log(`[PASS] deno: ${denoFirstLine}`);
 }
 
 async function main() {
@@ -144,6 +174,7 @@ async function main() {
   try {
     await fetchYtDlp();
     await fetchFfmpeg();
+    await fetchDeno();
     await verifyBinaries();
     console.log('\nAll binaries ready in resources/bin!');
   } catch (err) {

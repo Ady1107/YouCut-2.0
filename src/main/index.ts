@@ -19,10 +19,13 @@ try {
   console.warn('[Main] Failed to set userData path:', e);
 }
 
-// Disable GPU in sandbox to prevent access violation crashes
+// Configure graphics rendering: disable hardware acceleration safely without breaking software rasterizer fallback
 app?.commandLine?.appendSwitch('no-sandbox');
-app?.commandLine?.appendSwitch('disable-gpu');
-app?.commandLine?.appendSwitch('disable-software-rasterizer');
+try {
+  app?.disableHardwareAcceleration?.();
+} catch (e) {
+  console.warn('[Main] Failed to disable hardware acceleration:', e);
+}
 
 let mainWindow: BrowserWindow | null = null;
 const activeChildPids = new Set<number>();
